@@ -1,0 +1,35 @@
+# Dependencies
+/node_modules/
+
+# Build outputs
+/dist-electron/
+/dist-renderer/
+/release/
+*.tsbuildinfo
+
+# Local app state and exported user data
+/save/
+*.glseq
+*.glset
+gaminglooper-settings.json
+
+# Local working artifacts
+docs/*_handoff.md
+/work/
+/outputs/
+/mockups/
+/scripts/
+
+# Local source BGM and promotional media
+/asset/*
+!/asset/se/
+!/asset/se/**
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.log
+*.tmp
