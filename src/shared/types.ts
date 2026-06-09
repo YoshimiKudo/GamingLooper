@@ -247,6 +247,7 @@ export interface GamingProject {
   playlistCumulativePlayMs: number;
   activePlaylistId: string | null;
   playlistEndBehavior: PlaylistEndBehavior;
+  allListRepeatEnabled: boolean;
   playlist: PlaylistItem[];
   savedPlaylists: SavedPlaylist[];
   seAssignments: SeAssignment[];

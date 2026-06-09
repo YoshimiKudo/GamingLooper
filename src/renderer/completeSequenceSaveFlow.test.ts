@@ -12,10 +12,11 @@ describe("Complete & Save Sequence flow", () => {
     expect(appSource).not.toContain('t("completeSequenceHelp")');
   });
 
-  it("adds a guarded Clear Sequence action that only empties the builder sequence", () => {
-    expect(i18nSource).toContain('clearSequence: "Clear Sequence"');
+  it("adds a guarded Reset Sequence action that only empties the builder sequence", () => {
+    expect(i18nSource).toContain('clearSequence: "Reset Sequence"');
     expect(i18nSource).toContain("BGM Sourceと保存済みListは削除されません。Build Sequencer内の曲だけを取り除きます。");
     expect(appSource).toContain('className="thin-button danger clear-sequence-button"');
+    expect(appSource).toContain('className="complete-list-button-label"');
     expect(appSource.indexOf("complete-list-button")).toBeLessThan(appSource.indexOf("clear-sequence-button"));
 
     const clearFlow = appSource.slice(appSource.indexOf("async function clearCurrentSequence"), appSource.indexOf("async function savePlaylistAs"));

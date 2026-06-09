@@ -466,9 +466,7 @@ button {
   gap: 8px;
   align-items: center;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: thin;
+  overflow: hidden;
   white-space: nowrap;
 }
 
@@ -578,6 +576,52 @@ button {
   color: rgba(255, 231, 207, 0.95);
   background: linear-gradient(180deg, rgba(229, 158, 105, 0.22), rgba(229, 158, 105, 0.06));
   box-shadow: inset 0 0 16px rgba(229, 158, 105, 0.08);
+}
+
+.sequencer-end-mode-toggle.all-list-repeat-locked {
+  opacity: 0.46;
+  filter: grayscale(0.55);
+}
+
+.sequencer-end-mode-toggle.all-list-repeat-locked button {
+  cursor: not-allowed;
+}
+
+.all-list-repeat-status {
+  flex: 0 1 176px;
+  height: 38px;
+  min-width: 42px;
+  max-width: 176px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: rgba(214, 255, 198, 0.95);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  cursor: default;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.all-list-repeat-lamp {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border-radius: 999px;
+  background: rgb(148, 242, 109);
+  box-shadow:
+    0 0 8px rgba(148, 242, 109, 0.96),
+    0 0 18px rgba(139, 242, 118, 0.42);
+}
+
+.all-list-repeat-status span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 10px rgba(139, 242, 118, 0.24);
 }
 
 .icon-button:hover,
@@ -1186,6 +1230,41 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.saved-list-title-actions {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.all-list-repeat-button {
+  height: 30px;
+  padding: 0 10px;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(236, 226, 216, 0.66);
+  border-color: rgba(207, 164, 124, 0.2);
+  background: rgba(255, 255, 255, 0.018);
+  white-space: nowrap;
+}
+
+.all-list-repeat-button.active {
+  color: rgba(214, 255, 198, 0.96);
+  border-color: rgba(139, 242, 118, 0.42);
+  background:
+    radial-gradient(circle at 24% 50%, rgba(139, 242, 118, 0.22), transparent 60%),
+    linear-gradient(180deg, rgba(139, 242, 118, 0.14), rgba(139, 242, 118, 0.035)),
+    rgba(8, 13, 8, 0.64);
+  box-shadow:
+    inset 0 0 0 1px rgba(139, 242, 118, 0.08),
+    0 0 14px rgba(139, 242, 118, 0.2);
+}
+
+.all-list-repeat-button.active svg {
+  filter: drop-shadow(0 0 5px rgba(139, 242, 118, 0.68));
 }
 
 .panel-title-icon {
@@ -2060,6 +2139,10 @@ input[type="number"] {
 
 .playlist-panel {
   padding: 14px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .playlist-panel.playlist-empty-disabled {
@@ -2076,11 +2159,17 @@ input[type="number"] {
 
 .playlist-list {
   margin-top: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   gap: 4px;
   grid-auto-rows: 48px;
-  max-height: calc(100% - 92px);
-  overflow: hidden;
+  align-content: start;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(214, 181, 144, 0.5) rgba(255, 255, 255, 0.035);
 }
 
 .playlist-row {
@@ -4526,8 +4615,19 @@ canvas {
 }
 
 .complete-list-button {
-  height: 34px;
+  height: auto;
+  min-height: 40px;
   padding-inline: 16px;
+  padding-block: 4px;
+  gap: 10px;
+  min-width: 0;
+}
+
+.complete-list-button-label {
+  display: block;
+  min-width: 0;
+  line-height: 1.05;
+  text-align: center;
 }
 
 .complete-list-button.attention:not(:disabled) {
@@ -8614,6 +8714,22 @@ canvas {
   font-size: 13px;
 }
 
+.app.big-font-mode .all-list-repeat-status {
+  height: 46px;
+  font-size: 13px;
+}
+
+.app.big-font-mode .all-list-repeat-lamp {
+  width: 12px;
+  height: 12px;
+  flex-basis: 12px;
+}
+
+.app.big-font-mode .all-list-repeat-button {
+  height: 36px;
+  font-size: 13px;
+}
+
 .app.big-font-mode .transport-action {
   flex-basis: 256px;
 }
@@ -8639,7 +8755,6 @@ canvas {
 
 .app.big-font-mode .playlist-list {
   grid-auto-rows: 64px;
-  max-height: calc(100% - 132px);
 }
 
 .app.big-font-mode .playlist-row {
@@ -8746,6 +8861,10 @@ canvas {
 .app.big-font-mode .builder-complete-row {
   min-height: 76px;
   padding: 12px 14px;
+}
+
+.app.big-font-mode .complete-list-button {
+  min-height: 50px;
 }
 
 .app.big-font-mode .builder-bulk-action-summary strong {

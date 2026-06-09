@@ -1877,7 +1877,7 @@ function App(): ReactElement {
               onExportSavedPlaylist={(id) => void exportSavedPlaylist(id)}
               onDeleteSavedPlaylist={(id) => void deleteSavedPlaylist(id)}
               onDuplicateSavedPlaylist={duplicateSavedPlaylist}
-              onRenameSavedPlaylist={(id) => void renameSavedPlaylist(id)}
+              onAllListRepeatChange={updateAllListRepeatEnabled}
               onImportSequenceFile={() => void importSequenceFile()}
               onSelectTrack={selectTrack}
               onLoopChange={updateSelectedLoop}
@@ -2997,12 +2997,16 @@ function App(): ReactElement {
     const latestProject = projectRef.current;
     const latestEnabledPlaylist = latestProject.playlistCreated ? getEnabledPlaylistItems(latestProject.playlist) : [];
     const latestCurrentIndex = latestEnabledPlaylist.findIndex((candidate) => candidate.id === item.id);
+    const effectiveEndBehavior: PlaylistEndBehavior = latestProject.allListRepeatEnabled ? "stop" : latestProject.playlistEndBehavior;
     const nextIndex = getNextPlaylistIndex(
       latestCurrentIndex >= 0 ? latestCurrentIndex : index,
       latestEnabledPlaylist.length,
-      latestProject.playlistEndBehavior
+      effectiveEndBehavior
     );
     if (nextIndex === null) {
+      if (latestProject.allListRepeatEnabled && playNextSavedPlaylistForAllListRepeat(latestProject)) {
+        return;
+      }
       commitPlaylistListeningTime();
       clearPlaylistTimers();
       const stoppedPlayback: PlaybackState = { mode: "stopped" };
@@ -3015,6 +3019,19 @@ function App(): ReactElement {
       return;
     }
     void playPlaylistAt(nextIndex);
+  }
+
+  function playNextSavedPlaylistForAllListRepeat(currentProject: GamingProject): boolean {
+    if (currentProject.savedPlaylists.length === 0) return false;
+    const currentIndex = currentProject.activePlaylistId
+      ? currentProject.savedPlaylists.findIndex((playlist) => playlist.id === currentProject.activePlaylistId)
+      : -1;
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % currentProject.savedPlaylists.length : 0;
+    const nextPlaylist = currentProject.savedPlaylists[nextIndex];
+    if (!nextPlaylist) return false;
+    if (!loadSavedPlaylist(nextPlaylist.id)) return false;
+    void playPlaylistAt(0);
+    return true;
   }
 
   function schedulePlaylistTimers(item: PlaylistItem, index: number, track: BgmTrack, plannedMs: number, debugRate: number, elapsedMs = 0): void {
@@ -3821,6 +3838,10 @@ function App(): ReactElement {
   }
 
   function updatePlaylistEndBehavior(playlistEndBehavior: PlaylistEndBehavior): void {
+    if (projectRef.current.allListRepeatEnabled) {
+      setStatus(language === "ja" ? "All List Repeat中はRepeat Sequenceを変更できません。" : "Repeat Sequence is locked while All List Repeat is active.");
+      return;
+    }
     setProjectState((draft) => ({ ...draft, playlistEndBehavior }));
     setStatus(
       language === "ja"
@@ -3830,6 +3851,19 @@ function App(): ReactElement {
         : playlistEndBehavior === "repeat"
           ? "Sequencer Repeat enabled."
           : "Sequencer One Shot enabled."
+    );
+  }
+
+  function updateAllListRepeatEnabled(allListRepeatEnabled: boolean): void {
+    setProjectState((draft) => ({ ...draft, allListRepeatEnabled }));
+    setStatus(
+      language === "ja"
+        ? allListRepeatEnabled
+          ? "All List RepeatをONにしました。"
+          : "All List RepeatをOFFにしました。"
+        : allListRepeatEnabled
+          ? "All List Repeat enabled."
+          : "All List Repeat disabled."
     );
   }
 
@@ -4072,7 +4106,7 @@ function App(): ReactElement {
     setStatus(language === "ja" ? `Seq Listを削除しました: ${playlist.name}` : `Seq List deleted: ${playlist.name}`);
   }
 
-  function duplicateSavedPlaylist(id: string): void {
+  async function duplicateSavedPlaylist(id: string): Promise<void> {
     const playlist = projectRef.current.savedPlaylists.find((item) => item.id === id);
     if (!playlist) return;
     const baseName = language === "ja" ? `${playlist.name} のコピー` : `${playlist.name} Copy`;
@@ -4082,31 +4116,24 @@ function App(): ReactElement {
       id: createLocalId(),
       name
     };
+    let exportResult: { path: string; playlistName: string } | null = null;
+    try {
+      exportResult = await window.gamingLooper.exportSequenceFile(createSequenceFilePayload(projectRef.current, duplicate));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Sequence save failed.");
+      return;
+    }
+    if (!exportResult) return;
+    const savedName = sanitizePlaylistName(exportResult.playlistName, name);
+    const savedDuplicate = {
+      ...duplicate,
+      name: savedName
+    };
     setProjectState((draft) => ({
       ...draft,
-      savedPlaylists: [...draft.savedPlaylists, duplicate]
+      savedPlaylists: [...draft.savedPlaylists, savedDuplicate]
     }));
-    setStatus(language === "ja" ? `Seq Listを複製しました: ${name}` : `Seq List duplicated: ${name}`);
-  }
-
-  async function renameSavedPlaylist(id: string): Promise<void> {
-    const playlist = projectRef.current.savedPlaylists.find((item) => item.id === id);
-    if (!playlist) return;
-    const name = await requestPrompt({
-      title: language === "ja" ? "名前を変更して保存" : "Rename and Save",
-      message: language === "ja" ? "Seq List名を入力してください。" : "Enter a Seq List name.",
-      initialValue: playlist.name,
-      confirmLabel: t("save")
-    });
-    if (name === null) return;
-    const safeName = sanitizePlaylistName(name, playlist.name);
-    if (!safeName) return;
-    setProjectState((draft) => ({
-      ...draft,
-      playlistName: draft.activePlaylistId === id ? safeName : draft.playlistName,
-      savedPlaylists: draft.savedPlaylists.map((item) => (item.id === id ? { ...item, name: safeName } : item))
-    }));
-    setStatus(language === "ja" ? `Seq List名を保存しました: ${safeName}` : `Seq List renamed: ${safeName}`);
+    setStatus(language === "ja" ? `Seq Listを複製して保存しました: ${savedName}` : `Seq List duplicated and saved: ${savedName}`);
   }
 
   async function exportSavedPlaylist(id: string): Promise<void> {
@@ -4638,6 +4665,7 @@ function MainView({
   const isPlaylistPlaying = playback.mode === "playlist";
   const playlistReady = project.playlistCreated;
   const sequencerRepeats = project.playlistEndBehavior === "repeat";
+  const allListRepeatActive = project.allListRepeatEnabled;
   const enabledPlaylistCount = playlistReady ? getEnabledPlaylistItems(project.playlist).length : 0;
   const canNavigatePlaylist = enabledPlaylistCount > 1;
   const sequenceItems = playlistReady ? getEnabledPlaylistItems(project.playlist) : [];
@@ -4706,13 +4734,17 @@ function MainView({
           >
             <SkipForward size={18} />
           </button>
-          <div className="sequencer-end-mode-toggle" role="group" aria-label={t("sequencerEndMode")}>
+          <button className="icon-button" type="button" onClick={onStop} title={t("stop")}>
+            <Square size={17} />
+          </button>
+          <div className={`sequencer-end-mode-toggle ${allListRepeatActive ? "all-list-repeat-locked" : ""}`} role="group" aria-label={t("sequencerEndMode")}>
             <button
               className={sequencerRepeats ? "active" : ""}
               type="button"
               onClick={() => onPlaylistEndBehaviorChange("repeat")}
               title={t("sequencerRepeat")}
               aria-pressed={sequencerRepeats}
+              disabled={allListRepeatActive}
             >
               <Repeat size={15} />
               <span>{t("sequencerRepeat")}</span>
@@ -4723,13 +4755,21 @@ function MainView({
               onClick={() => onPlaylistEndBehaviorChange("stop")}
               title={t("sequencerOneShot")}
               aria-pressed={!sequencerRepeats}
+              disabled={allListRepeatActive}
             >
               <span>{t("oneShot")}</span>
             </button>
           </div>
-          <button className="icon-button" type="button" onClick={onStop} title={t("stop")}>
-            <Square size={17} />
-          </button>
+          {allListRepeatActive ? (
+            <div
+              className="all-list-repeat-status"
+              role="status"
+              aria-label={t("allListRepeat")}
+            >
+              <span className="all-list-repeat-lamp" aria-hidden="true" />
+              <span>{t("allListRepeat")}</span>
+            </div>
+          ) : null}
         </div>
         <div className="now-playing sequence-now-playing">
           <span className={`now-dot ${isPlaylistPlaying ? "" : "idle"}`} />
@@ -5827,7 +5867,7 @@ function LoopPlaylistView({
   onExportSavedPlaylist,
   onDeleteSavedPlaylist,
   onDuplicateSavedPlaylist,
-  onRenameSavedPlaylist,
+  onAllListRepeatChange,
   onImportSequenceFile,
   onSelectTrack,
   onLoopChange,
@@ -5880,8 +5920,8 @@ function LoopPlaylistView({
   onActivateSavedPlaylist: (id: string) => void;
   onExportSavedPlaylist: (id: string) => void;
   onDeleteSavedPlaylist: (id: string) => void | Promise<void>;
-  onDuplicateSavedPlaylist: (id: string) => void;
-  onRenameSavedPlaylist: (id: string) => void | Promise<void>;
+  onDuplicateSavedPlaylist: (id: string) => void | Promise<void>;
+  onAllListRepeatChange: (enabled: boolean) => void;
   onImportSequenceFile: () => void;
   onSelectTrack: (trackId: string) => void;
   onLoopChange: (loop: LoopMarker, options?: { history?: boolean }) => void;
@@ -6861,14 +6901,9 @@ function LoopPlaylistView({
     if (state.kind === "saved-list") {
       return [
         {
-          id: "duplicate",
-          label: isJa ? "複製" : "Duplicate",
+          id: "duplicate-as",
+          label: isJa ? "別名をつけて複製" : "Duplicate As",
           onSelect: run(() => onDuplicateSavedPlaylist(state.playlistId))
-        },
-        {
-          id: "rename-save",
-          label: isJa ? "名前を変更して保存" : "Rename and Save",
-          onSelect: run(() => onRenameSavedPlaylist(state.playlistId))
         },
         {
           id: "delete",
@@ -6951,7 +6986,19 @@ function LoopPlaylistView({
               </span>
               {t("list")}
             </h2>
-            <span className="subtle saved-list-count">{project.savedPlaylists.length} {t("savedCount")}</span>
+            <div className="saved-list-title-actions">
+              <button
+                className={`thin-button all-list-repeat-button ${project.allListRepeatEnabled ? "active" : ""}`}
+                type="button"
+                onClick={() => onAllListRepeatChange(!project.allListRepeatEnabled)}
+                aria-pressed={project.allListRepeatEnabled}
+                title={t("allListRepeat")}
+              >
+                <Repeat size={14} />
+                <span>{t("allListRepeat")}</span>
+              </button>
+              <span className="subtle saved-list-count">{project.savedPlaylists.length} {t("savedCount")}</span>
+            </div>
           </div>
           <div className="saved-list-scroll">
             {project.savedPlaylists.length > 0 ? (
@@ -7293,7 +7340,7 @@ function LoopPlaylistView({
             <div className="builder-complete-actions">
               <button className={`primary-button complete-list-button ${completeSequenceShouldGlow ? "attention" : ""}`} type="button" disabled={project.playlist.length === 0} onClick={onBuildList}>
                 <CompleteSequenceIcon />
-                {t("completeSequence")}
+                <span className="complete-list-button-label">{t("completeSequence")}</span>
               </button>
               <button className="thin-button danger clear-sequence-button" type="button" disabled={project.playlist.length === 0} onClick={onClearSequence}>
                 {t("clearSequence")}
@@ -9161,6 +9208,7 @@ function normalizeProject(project: GamingProject): GamingProject {
     playlistCumulativePlayMs: sanitizePlaylistCumulativeMs((project as Partial<GamingProject>).playlistCumulativePlayMs ?? savedPlaylists.find((playlist) => playlist.id === activePlaylistId)?.cumulativePlayMs),
     activePlaylistId,
     playlistEndBehavior,
+    allListRepeatEnabled: Boolean((project as Partial<GamingProject>).allListRepeatEnabled),
     playlist,
     savedPlaylists,
     seAssignments,
@@ -9271,6 +9319,18 @@ function cloneSavedPlaylist(playlist: SavedPlaylist): SavedPlaylist {
     rating: sanitizePlaylistRating(playlist.rating),
     cumulativePlayMs: sanitizePlaylistCumulativeMs(playlist.cumulativePlayMs),
     items: clonePlaylistItems(playlist.items)
+  };
+}
+
+function createSequenceFilePayload(project: GamingProject, playlist: SavedPlaylist): SequenceFile {
+  const trackIds = new Set(playlist.items.map((item) => item.trackId));
+  return {
+    fileKind: "gaminglooper.sequence",
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    playlist: cloneSavedPlaylist(playlist),
+    tracks: project.bgmTracks.filter((track) => trackIds.has(track.id)).map((track) => cloneBgmTrack(track)),
+    playlistEndBehavior: project.playlistEndBehavior
   };
 }
 

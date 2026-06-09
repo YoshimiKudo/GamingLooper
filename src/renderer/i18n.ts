@@ -18,6 +18,7 @@ export type TextKey =
   | "sequencerRepeat"
   | "sequencerOneShot"
   | "oneShot"
+  | "allListRepeat"
   | "nowPlaying"
   | "noBgmSelected"
   | "bgmPlaylist"
@@ -254,6 +255,7 @@ const en: TextMap = {
   sequencerRepeat: "Repeat Sequence",
   sequencerOneShot: "One Shot Sequencer",
   oneShot: "One Shot",
+  allListRepeat: "All List Repeat",
   bgmPlaylist: "Sequencer Play List",
   sequenceStars: "Sequence Stars",
   songCount: "Songs",
@@ -434,8 +436,8 @@ const en: TextMap = {
   sequenceEmpty: "Sequence is empty",
   completeSequenceHelp: "Save the current Sequence as a file, then mount it to List.",
   completeSequence: "Complete & Save Sequence",
-  clearSequence: "Clear Sequence",
-  clearSequenceConfirmMessage: "Clear the current Sequence?",
+  clearSequence: "Reset Sequence",
+  clearSequenceConfirmMessage: "Reset the current Sequence?",
   clearSequenceConfirmDetail: "BGM Source and saved Lists are not deleted. Only the songs currently placed in Build Sequencer are removed.",
   bgmSource: "BGM Source",
   files: "files",
@@ -487,6 +489,7 @@ const ja: TextMap = {
   sequencerRepeat: "Repeat Sequence",
   sequencerOneShot: "SequencerをOne Shot再生",
   oneShot: "One Shot",
+  allListRepeat: "All List Repeat",
   bgmPlaylist: "Sequencer Play List",
   sequenceStars: "Sequence Stars",
   songCount: "楽曲数",
@@ -667,8 +670,8 @@ const ja: TextMap = {
   sequenceEmpty: "Sequenceは空です",
   completeSequenceHelp: "現在のSequenceを実ファイルとして保存し、保存できた場合だけListに登録します。",
   completeSequence: "Complete & Save Sequence",
-  clearSequence: "Clear Sequence",
-  clearSequenceConfirmMessage: "現在のSequenceを空にしますか？",
+  clearSequence: "Reset Sequence",
+  clearSequenceConfirmMessage: "現在のSequenceをリセットしますか？",
   clearSequenceConfirmDetail: "BGM Sourceと保存済みListは削除されません。Build Sequencer内の曲だけを取り除きます。",
   bgmSource: "BGM Source",
   files: "files",

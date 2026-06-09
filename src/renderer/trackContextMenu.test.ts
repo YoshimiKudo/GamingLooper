@@ -26,7 +26,8 @@ describe("track row context actions", () => {
     expect(appSource).toContain("Loop Scan");
     expect(appSource).toContain("onDuplicatePlaylistItem(state.itemId)");
     expect(appSource).toContain("onDuplicateSavedPlaylist(state.playlistId)");
-    expect(appSource).toContain("onRenameSavedPlaylist(state.playlistId)");
+    expect(appSource).toContain("別名をつけて複製");
+    expect(appSource).not.toContain("onRenameSavedPlaylist(state.playlistId)");
     expect(appSource).toContain("onDeleteSavedPlaylist(state.playlistId)");
     expect(appSource).toContain("onDeletePlaylistItem(state.itemId)");
     expect(appSource).toContain("onDeleteSourceTrack(state.trackId)");
@@ -55,12 +56,14 @@ describe("track row context actions", () => {
     expect(appSource).toContain("function activateSavedPlaylistFromCard(event: ReactMouseEvent<HTMLElement>, id: string): void");
     expect(appSource).toContain("onClick={() => loadSavedPlaylistFromCard(playlist.id)}");
     expect(appSource).toContain("onDoubleClick={(event) => activateSavedPlaylistFromCard(event, playlist.id)}");
+    expect(appSource).toContain("onClick={() => onAllListRepeatChange(!project.allListRepeatEnabled)}");
+    expect(appSource).toContain("all-list-repeat-button");
     expect(appSource).toContain("async function deleteSavedPlaylist(id: string): Promise<void>");
-    expect(appSource).toContain("function duplicateSavedPlaylist(id: string): void");
-    expect(appSource).toContain("async function renameSavedPlaylist(id: string): Promise<void>");
+    expect(appSource).toContain("async function duplicateSavedPlaylist(id: string): Promise<void>");
+    expect(appSource).not.toContain("async function renameSavedPlaylist(id: string): Promise<void>");
     expect(appSource).toContain("function getUniqueSavedPlaylistName(baseName: string, playlists: SavedPlaylist[], ignoreId?: string): string");
     expect(appSource).toContain("savedPlaylists: draft.savedPlaylists.filter((item) => item.id !== id)");
-    expect(appSource).toContain("savedPlaylists: [...draft.savedPlaylists, duplicate]");
-    expect(appSource).toContain("savedPlaylists: draft.savedPlaylists.map((item) => (item.id === id ? { ...item, name: safeName } : item))");
+    expect(appSource).toContain("exportResult = await window.gamingLooper.exportSequenceFile(createSequenceFilePayload(projectRef.current, duplicate))");
+    expect(appSource).toContain("savedPlaylists: [...draft.savedPlaylists, savedDuplicate]");
   });
 });

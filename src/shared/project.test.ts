@@ -71,6 +71,10 @@ describe("project defaults", () => {
     expect(createEmptyProject().playlistCumulativePlayMs).toBe(0);
   });
 
+  it("keeps All List Repeat off by default", () => {
+    expect(createEmptyProject().allListRepeatEnabled).toBe(false);
+  });
+
   it("starts with no source-hidden BGM tracks", () => {
     expect(createEmptyProject().sourceHiddenTrackIds).toEqual([]);
   });

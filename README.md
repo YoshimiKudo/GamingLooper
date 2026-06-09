@@ -145,7 +145,35 @@ Choose a file name in the save dialog. If the Sequence file is saved, it is moun
 
 ### 5. Load the List and play it in Main View
 
-Click a saved List in `Sequence List` to load it into Main View. The Main View Play List uses the saved order and transition rules.
+Click a saved List in `Sequence List` to load it as the current editable Sequence. Double-click a saved List to load it, switch to Main View, and start playback. The Main View Play List uses the saved order and transition rules.
+
+Use `All List Repeat` in the Sequence List header when you want GamingLooper to continue through every mounted Sequence. While it is active, `Repeat Sequence` is locked because playback is controlled at the Sequence List level. Main View shows an `All List Repeat` status lamp while the mode is active, but that lamp is only an indicator; turn the mode on or off from the Sequence List header. When the current Sequence finishes, GamingLooper loads and plays the next saved Sequence. After the last saved Sequence finishes, playback continues from the first saved Sequence again.
+
+Right-click a saved List for List-level actions:
+
+| Action | Meaning |
+| --- | --- |
+| `Duplicate As` | Save a new `.glseq` file and add the copied Sequence using the saved file name. The original List remains unchanged. |
+| `Delete` | Remove only the saved Sequence List entry. Audio files are not deleted. |
+
+Right-click a Build Sequencer row for row-level actions:
+
+| Action | Meaning |
+| --- | --- |
+| `Move to BGM Source` | Remove that row from the current Sequence and make the track available from BGM Source again. |
+| `Duplicate` | Add another row using the same source track and playback rule. |
+| `Loop Scan` | Run Auto Loop again for that track using the current Auto Loop settings. |
+| `Delete` | Remove the row from the current Sequence. Audio files are not deleted. |
+
+Right-click a BGM Source row for source-level actions:
+
+| Action | Meaning |
+| --- | --- |
+| `Send to Build Sequencer` | Add the track to the current Sequence. |
+| `Loop Scan` | Run Auto Loop again for that track using the current Auto Loop settings. |
+| `Delete` | Remove the source entry when it is not needed. Tracks still referenced by saved Lists are kept for those Lists. |
+
+Use `Reset Sequence` when you want to clear only the current Build Sequencer rows. BGM Source, saved Lists, and audio files are not deleted.
 
 In short: import source tracks, send only the tracks you need into Build Sequencer, choose `Loop`, `Time`, or `Straight` per track, adjust `Fade`, save with Complete & Save Sequence, then play the saved List from Main View.
 
@@ -153,6 +181,7 @@ In short: import source tracks, send only the tracks you need into Build Sequenc
 
 - Non-destructive by design. Audio files are never rewritten for loop metadata.
 - Loop markers, playlist rules, SE assignments, per-track BGM volume, SE volume/PAN, mix, visual settings, display language, and panel split ratios are stored locally.
+- Sequence List playback mode, including `All List Repeat`, is stored locally.
 - BGM is one playback stream. SE is multi-voice with a configurable voice limit and late-trigger priority.
 - App state can be saved, loaded, initialized, exported as a JSON backup, and imported from a JSON backup.
 
@@ -172,6 +201,7 @@ In short: import source tracks, send only the tracks you need into Build Sequenc
 - Build Play List before playlist playback. Before creation, playlist playback is disabled and prompts to open the Play List build flow.
 - Each playlist item can use loop count, duration, or straight playback, with fade-out before moving to the next item.
 - Playlist rules can be copied, pasted, moved, and applied across all items.
+- `All List Repeat` plays the saved Sequence List in order. It disables `Repeat Sequence` while active so the current Sequence can finish and advance to the next saved Sequence.
 
 ## SE Pad
 

@@ -85,6 +85,7 @@ export function createEmptyProject(): GamingProject {
     playlistCumulativePlayMs: 0,
     activePlaylistId: null,
     playlistEndBehavior: "repeat",
+    allListRepeatEnabled: false,
     playlist: [],
     savedPlaylists: [],
     seAssignments: createDefaultSeAssignments(),
