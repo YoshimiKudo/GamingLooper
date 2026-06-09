@@ -1,6 +1,63 @@
 GamingLooper README
 ===================
 
+日本語
+------
+
+GamingLooper は、Windows向けのポータブルなディレクトリ配布版です。
+
+起動方法
+--------
+
+GamingLooper.exe をダブルクリックしてください。
+
+GamingLooper フォルダ全体をまとめて保持してください。アプリは
+GamingLooper.exe の隣にある以下のフォルダやファイルを使います。
+
+- save
+- asset/se
+- resources
+
+保存データ
+----------
+
+save フォルダは、初期状態のローカル保存先です。
+
+初期設定では、GamingLooper は以下のデータを save フォルダに保存します。
+
+- Project 状態: gaminglooper-settings.json
+- Sequence ファイル: .glseq
+- SE Set ファイル: .glset
+
+Project 状態には、Sequence List、保存済み SE Set、評価、累計再生時間、
+SE 割り当て、Mix、Config の値などが含まれます。
+
+音声ファイル本体は自動でコピー・移動されません。GamingLooper は音声
+ファイルへの参照を保存します。保存後に元の音声ファイルを移動した場合は、
+必要に応じて再読み込みしてください。
+
+更新時の注意
+------------
+
+古い GamingLooper フォルダを置き換える前に、必要な保存データがある場合は
+古い save フォルダをバックアップするか、保持してください。
+
+初期SEファイルは asset/se に入っています。初回起動時に SE Pad が割り当て済み
+になるよう同梱されています。
+
+注意
+----
+
+このビルドは未署名です。初回起動時に Windows の警告が表示される場合があります。
+
+GamingLooper フォルダを Program Files などの書き込み制限がある場所に置かないで
+ください。Documents など、ユーザーが書き込める場所に置いてください。
+
+詳しい使い方は、アプリ内の README ボタンまたは GitHub の README を参照してください。
+
+English
+-------
+
 GamingLooper is a portable Windows directory release.
 
 Start

@@ -14,6 +14,15 @@ describe("saved list action buttons", () => {
     expect(appSource).not.toContain("onLoadStoredProject");
   });
 
+  it("does not switch to Main View after importing a Sequence file from the builder list", () => {
+    const importSequenceFileBlock = appSource.slice(appSource.indexOf("async function importSequenceFile()"), appSource.indexOf("function normalizeImportedSequenceFile"));
+    const activateSavedPlaylistBlock = appSource.slice(appSource.indexOf("async function activateSavedPlaylist"), appSource.indexOf("async function deleteSavedPlaylist"));
+
+    expect(importSequenceFileBlock).toContain("mergeImportedSequence(imported, sameNamePlaylist?.id)");
+    expect(importSequenceFileBlock).not.toContain('setView("main")');
+    expect(activateSavedPlaylistBlock).toContain('setView("main")');
+  });
+
   it("keeps the Sequence import button inside the saved-list column at narrow widths", () => {
     const savedListZoneStyle = styleSource.slice(styleSource.indexOf(".saved-list-zone {"), styleSource.indexOf(".saved-list-zone.list-not-loaded"));
     const savedListActionsStyle = styleSource.slice(styleSource.indexOf(".saved-list-actions {"), styleSource.indexOf(".load-list-button {"));

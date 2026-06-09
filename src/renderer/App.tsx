@@ -4197,7 +4197,6 @@ function App(): ReactElement {
         return;
       }
       const importedPlaylist = mergeImportedSequence(imported, sameNamePlaylist?.id);
-      setView("main");
       setStatus(language === "ja" ? `Sequenceを読み込みました: ${importedPlaylist.name}` : `Sequence imported: ${importedPlaylist.name}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Sequence import failed.");

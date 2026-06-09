@@ -103,6 +103,10 @@ describe("file storage layout", () => {
   });
 
   it("ships a short root README for directory release users", () => {
+    expect(releaseReadme).toContain("GamingLooper は、Windows向けのポータブルなディレクトリ配布版です。");
+    expect(releaseReadme).toContain("GamingLooper.exe をダブルクリックしてください。");
+    expect(releaseReadme).toContain("音声ファイル本体は自動でコピー・移動されません。");
+    expect(releaseReadme).toContain("このビルドは未署名です。");
     expect(releaseReadme).toContain("Double-click GamingLooper.exe.");
     expect(releaseReadme).toContain("Before replacing an old GamingLooper folder");
     expect(releaseReadme).toContain("Audio files are not copied or moved automatically.");
