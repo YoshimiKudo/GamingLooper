@@ -48,6 +48,10 @@
     ],
     "extraFiles": [
       {
+        "from": "release-template/README.txt",
+        "to": "README.txt"
+      },
+      {
         "from": "release-template/save",
         "to": "save",
         "filter": [

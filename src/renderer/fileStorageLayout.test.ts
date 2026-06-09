@@ -8,6 +8,7 @@ const preloadSource = readFileSync(new URL("../preload/index.ts", import.meta.ur
 const styleSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const projectStoreSource = readFileSync(new URL("../main/services/projectStore.ts", import.meta.url), "utf8");
 const packageSource = readFileSync(new URL("../../package.json", import.meta.url), "utf8");
+const releaseReadme = readFileSync(new URL("../../release-template/README.txt", import.meta.url), "utf8");
 
 describe("file storage layout", () => {
   it("keeps Config detail cards aligned with the SE Pad Control panel", () => {
@@ -91,11 +92,20 @@ describe("file storage layout", () => {
 
   it("packages only the release save template and bundled self-made SE assets", () => {
     expect(packageSource).toContain('"extraFiles"');
+    expect(packageSource).toContain('"from": "release-template/README.txt"');
+    expect(packageSource).toContain('"to": "README.txt"');
     expect(packageSource).toContain('"from": "release-template/save"');
     expect(packageSource).toContain('"to": "save"');
     expect(packageSource).toContain('"from": "asset/se"');
     expect(packageSource).toContain('"to": "asset/se"');
     expect(packageSource).not.toContain('"from": "save"');
     expect(packageSource).not.toContain('"from": "asset/bgm"');
+  });
+
+  it("ships a short root README for directory release users", () => {
+    expect(releaseReadme).toContain("Double-click GamingLooper.exe.");
+    expect(releaseReadme).toContain("Before replacing an old GamingLooper folder");
+    expect(releaseReadme).toContain("Audio files are not copied or moved automatically.");
+    expect(releaseReadme).toContain("This build is unsigned.");
   });
 });
