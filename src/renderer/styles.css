@@ -4203,11 +4203,12 @@ canvas {
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
     "name count"
-    ". total";
+    "stars total";
   align-items: center;
   gap: 4px 10px;
   padding: 8px 11px;
   cursor: pointer;
+  user-select: none;
 }
 
 .saved-list-file-button {
@@ -4298,6 +4299,31 @@ canvas {
   grid-area: total;
   justify-self: end;
   font-variant-numeric: tabular-nums;
+}
+
+.saved-list-stars {
+  grid-area: stars;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+}
+
+.saved-list-stars .sequence-stars-control {
+  gap: 2px;
+  margin-inline: 0;
+}
+
+.saved-list-stars .sequence-stars-label {
+  margin-right: 2px;
+  font-size: 10px;
+  color: rgba(246, 190, 143, 0.58);
+}
+
+.saved-list-stars .sequence-star {
+  width: 17px;
+  height: 17px;
+  font-size: 17px;
 }
 
 .saved-list-actions {
@@ -4701,8 +4727,16 @@ canvas {
 
 .builder-song-row:hover,
 .saved-list-card:hover,
+.saved-list-card:focus-visible,
 .source-track-row:hover {
   border-color: rgba(229, 158, 105, 0.34);
+}
+
+.saved-list-card:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px rgba(246, 190, 143, 0.22),
+    0 0 16px rgba(229, 158, 105, 0.12);
 }
 
 .builder-song-row:hover,

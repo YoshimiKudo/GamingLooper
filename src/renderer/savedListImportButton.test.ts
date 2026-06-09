@@ -36,18 +36,23 @@ describe("saved list action buttons", () => {
     expect(loadListButtonStyle).toContain("text-overflow: ellipsis;");
   });
 
-  it("shows saved list total time only on the right side of the card", () => {
+  it("shows editable Fav and total time on saved list cards", () => {
     const savedListCardBlock = appSource.slice(appSource.indexOf('className={`saved-list-card'), appSource.indexOf('className="thin-button saved-list-file-button"'));
     const savedListStyleBlock = styleSource.slice(styleSource.indexOf(".saved-list-card {"), styleSource.indexOf(".saved-list-file-button"));
 
     expect(savedListCardBlock).toContain('className="saved-list-song-count"');
+    expect(savedListCardBlock).toContain('className="saved-list-stars"');
+    expect(savedListCardBlock).toContain("<SequenceStars rating={playlist.rating}");
+    expect(savedListCardBlock).toContain("onSavedPlaylistRatingChange(playlist.id, rating)");
+    expect(savedListCardBlock).toContain("onClick={stopSavedPlaylistRatingEvent}");
     expect(savedListCardBlock).toContain('className="saved-list-total-time"');
     expect(savedListCardBlock).toContain('{t("total")} {formatTimeSeconds(totalMs)}');
     expect(savedListCardBlock).not.toContain('{t("cumulative")}');
     expect(savedListCardBlock).not.toContain('<span>{t("total")}');
     expect(savedListStyleBlock).toContain('grid-template-areas:');
     expect(savedListStyleBlock).toContain('"name count"');
-    expect(savedListStyleBlock).toContain('". total"');
+    expect(savedListStyleBlock).toContain('"stars total"');
+    expect(styleSource).toContain(".saved-list-stars");
     expect(styleSource).toContain(".saved-list-total-time");
     expect(styleSource).toContain("justify-self: end;");
   });

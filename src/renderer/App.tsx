@@ -1877,6 +1877,7 @@ function App(): ReactElement {
               onExportSavedPlaylist={(id) => void exportSavedPlaylist(id)}
               onDeleteSavedPlaylist={(id) => void deleteSavedPlaylist(id)}
               onDuplicateSavedPlaylist={duplicateSavedPlaylist}
+              onSavedPlaylistRatingChange={updateSavedPlaylistRating}
               onAllListRepeatChange={updateAllListRepeatEnabled}
               onImportSequenceFile={() => void importSequenceFile()}
               onSelectTrack={selectTrack}
@@ -3834,6 +3835,15 @@ function App(): ReactElement {
       savedPlaylists: draft.activePlaylistId
         ? draft.savedPlaylists.map((playlist) => (playlist.id === draft.activePlaylistId ? { ...playlist, rating: safeRating } : playlist))
         : draft.savedPlaylists
+    }));
+  }
+
+  function updateSavedPlaylistRating(id: string, rating: number): void {
+    const safeRating = sanitizePlaylistRating(rating);
+    setProjectState((draft) => ({
+      ...draft,
+      playlistRating: draft.activePlaylistId === id ? safeRating : draft.playlistRating,
+      savedPlaylists: draft.savedPlaylists.map((playlist) => (playlist.id === id ? { ...playlist, rating: safeRating } : playlist))
     }));
   }
 
@@ -5867,6 +5877,7 @@ function LoopPlaylistView({
   onExportSavedPlaylist,
   onDeleteSavedPlaylist,
   onDuplicateSavedPlaylist,
+  onSavedPlaylistRatingChange,
   onAllListRepeatChange,
   onImportSequenceFile,
   onSelectTrack,
@@ -5921,6 +5932,7 @@ function LoopPlaylistView({
   onExportSavedPlaylist: (id: string) => void;
   onDeleteSavedPlaylist: (id: string) => void | Promise<void>;
   onDuplicateSavedPlaylist: (id: string) => void | Promise<void>;
+  onSavedPlaylistRatingChange: (id: string, rating: number) => void;
   onAllListRepeatChange: (enabled: boolean) => void;
   onImportSequenceFile: () => void;
   onSelectTrack: (trackId: string) => void;
@@ -6775,6 +6787,16 @@ function LoopPlaylistView({
     onActivateSavedPlaylist(id);
   }
 
+  function handleSavedPlaylistCardKeyDown(event: ReactKeyboardEvent<HTMLElement>, id: string): void {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    loadSavedPlaylistFromCard(id);
+  }
+
+  function stopSavedPlaylistRatingEvent(event: ReactMouseEvent<HTMLElement> | ReactPointerEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>): void {
+    event.stopPropagation();
+  }
+
   function handleSavedPlaylistContextMenu(event: ReactMouseEvent<HTMLElement>, id: string): void {
     event.preventDefault();
     event.stopPropagation();
@@ -7006,17 +7028,29 @@ function LoopPlaylistView({
                 const totalMs = getPlaylistItemsTotalMs(playlist.items, project.bgmTracks);
                 return (
                   <div className="saved-list-entry" key={playlist.id}>
-                    <button
+                    <div
                       className={`saved-list-card ${project.activePlaylistId === playlist.id ? "selected" : ""} ${selectedSavedPlaylistId === playlist.id ? "load-target" : ""} ${completedPlaylistId === playlist.id ? "just-completed" : ""} ${pickedPlaylistId === playlist.id ? "picked" : ""}`}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => loadSavedPlaylistFromCard(playlist.id)}
                       onDoubleClick={(event) => activateSavedPlaylistFromCard(event, playlist.id)}
+                      onKeyDown={(event) => handleSavedPlaylistCardKeyDown(event, playlist.id)}
                       onContextMenu={(event) => handleSavedPlaylistContextMenu(event, playlist.id)}
                     >
                       <strong>{playlist.name}</strong>
                       <span className="saved-list-song-count">{playlist.items.length} {t("songs")}</span>
+                      <div
+                        className="saved-list-stars"
+                        onPointerDown={stopSavedPlaylistRatingEvent}
+                        onClick={stopSavedPlaylistRatingEvent}
+                        onDoubleClick={stopSavedPlaylistRatingEvent}
+                        onContextMenu={stopSavedPlaylistRatingEvent}
+                        onKeyDown={stopSavedPlaylistRatingEvent}
+                      >
+                        <SequenceStars rating={playlist.rating} onChange={(rating) => onSavedPlaylistRatingChange(playlist.id, rating)} />
+                      </div>
                       <span className="saved-list-total-time">{t("total")} {formatTimeSeconds(totalMs)}</span>
-                    </button>
+                    </div>
                     <button className="thin-button saved-list-file-button" type="button" onClick={() => onExportSavedPlaylist(playlist.id)}>
                       {t("exportSequence")}
                     </button>
