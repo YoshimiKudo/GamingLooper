@@ -14,6 +14,18 @@ describe("saved list action buttons", () => {
     expect(appSource).not.toContain("onLoadStoredProject");
   });
 
+  it("keeps the Sequence import button inside the saved-list column at narrow widths", () => {
+    const savedListActionsStyle = styleSource.slice(styleSource.indexOf(".saved-list-actions {"), styleSource.indexOf(".load-list-button {"));
+    const loadListButtonStyle = styleSource.slice(styleSource.indexOf(".load-list-button {"), styleSource.indexOf(".load-list-button:hover"));
+
+    expect(savedListActionsStyle).toContain("min-width: 0;");
+    expect(savedListActionsStyle).toContain("overflow: hidden;");
+    expect(loadListButtonStyle).toContain("box-sizing: border-box;");
+    expect(loadListButtonStyle).toContain("max-width: 100%;");
+    expect(loadListButtonStyle).toContain("min-width: 0;");
+    expect(loadListButtonStyle).toContain("text-overflow: ellipsis;");
+  });
+
   it("shows saved list total time only on the right side of the card", () => {
     const savedListCardBlock = appSource.slice(appSource.indexOf('className={`saved-list-card'), appSource.indexOf('className="thin-button saved-list-file-button"'));
     const savedListStyleBlock = styleSource.slice(styleSource.indexOf(".saved-list-card {"), styleSource.indexOf(".saved-list-file-button"));
