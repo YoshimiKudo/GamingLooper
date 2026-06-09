@@ -10,6 +10,8 @@ describe("main process broken pipe handling", () => {
     expect(mainSource.indexOf("preventBrokenPipeCrash();")).toBeLessThan(mainSource.indexOf("const isDev = !app.isPackaged;"));
     expect(mainSource).toContain("const originalWrite = stream.write.bind(stream)");
     expect(mainSource).toContain('candidate?.code === "EPIPE"');
+    expect(mainSource).toContain("const originalInternalWrite = writable._write?.bind(stream)");
+    expect(mainSource).toContain("callback(isBrokenPipe(error) ? null : error);");
     expect(mainSource).toContain('stream.prependListener("error"');
   });
 
@@ -18,5 +20,7 @@ describe("main process broken pipe handling", () => {
     expect(mainSource).toContain("if (isBrokenPipe(error)) return false;");
     expect(mainSource).toContain("if (isBrokenPipe(error)) return;");
     expect(mainSource).toContain('process.prependListener("uncaughtException"');
+    expect(mainSource).toContain('process.prependListener("unhandledRejection"');
+    expect(mainSource).toContain('eventName === "uncaughtException" || eventName === "unhandledRejection"');
   });
 });

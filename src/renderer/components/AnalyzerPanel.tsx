@@ -12,6 +12,7 @@ interface Props {
   manualLevel: number;
   voiceCount: number;
   seTransientLevel: number;
+  gamingnessEffectStrength: number;
 }
 
 interface SpectrumPeakStore {
@@ -104,7 +105,8 @@ export const AnalyzerPanel = memo(function AnalyzerPanel({
   autoLevel,
   manualLevel,
   voiceCount,
-  seTransientLevel
+  seTransientLevel,
+  gamingnessEffectStrength
 }: Props): ReactElement {
   const spectrumRef = useRef<HTMLCanvasElement | null>(null);
   const spectrumPeaksRef = useRef<SpectrumPeakStore>({ bgm: [], se: [], bgmLastAt: 0, seLastAt: 0 });
@@ -191,6 +193,7 @@ export const AnalyzerPanel = memo(function AnalyzerPanel({
           manualLevel,
           seSignalActiveRef.current,
           seTransientRef.current,
+          gamingnessEffectStrength,
           now
         );
         spectrumDrawMsTotal += performance.now() - drawStartedAt;
@@ -223,7 +226,7 @@ export const AnalyzerPanel = memo(function AnalyzerPanel({
       disposed = true;
       window.cancelAnimationFrame(frameId);
     };
-  }, [bgmAnalyser, seAnalyser, bands, fps, autoLevel, manualLevel]);
+  }, [bgmAnalyser, seAnalyser, bands, fps, autoLevel, manualLevel, gamingnessEffectStrength]);
 
   const safeDisplayFps = clamp(Math.round(fps), 10, 60);
   const fpsText = `S ${actualFps.spectrum > 0 ? actualFps.spectrum : "--"}/${safeDisplayFps} FPS`;
@@ -284,6 +287,7 @@ function drawSpectrum(
   manualLevel: number,
   seSignalActive: boolean,
   seTransientLevel: number,
+  gamingnessEffectStrength: number,
   now: number
 ): void {
   const prepared = prepareCanvas(canvas);
@@ -314,7 +318,7 @@ function drawSpectrum(
   const bgmData = smoothSpectrumFrame(work.smoothedBgm, frames, "bgm", now);
   const seData = smoothSpectrumFrame(work.smoothedSe, frames, "se", now);
 
-  drawSpectrumBars(ctx, bgmData, seData, width, plotBottom, plotHeight, xCache, work, now);
+  drawSpectrumBars(ctx, bgmData, seData, width, plotBottom, plotHeight, xCache, work, gamingnessEffectStrength, now);
 }
 
 function drawCachedFrequencyGrid(
@@ -409,6 +413,7 @@ function drawSpectrumBars(
   plotHeight: number,
   xCache: MutableRefObject<SpectrumXCache | null>,
   work: SpectrumWorkStore,
+  gamingnessEffectStrength: number,
   now: number
 ): void {
   const positions = getSpectrumXCache(width, bgmData.length, xCache);
@@ -417,6 +422,8 @@ function drawSpectrumBars(
   work.overlapLastAt = now;
   const attack = elapsedSeconds <= 0 ? 0.16 : Math.min(0.32, elapsedSeconds * 1.6);
   const release = elapsedSeconds <= 0 ? 0.88 : Math.max(0.62, 1 - elapsedSeconds * 2.2);
+  const gamingness = clamp(gamingnessEffectStrength, 0, 1);
+  const gamingnessPulse = gamingness > 0 ? gamingness * (0.78 + Math.sin(now / 520) * 0.22) : 0;
   ctx.save();
   ctx.shadowBlur = 0;
   ctx.shadowColor = "transparent";
@@ -431,15 +438,32 @@ function drawSpectrumBars(
     const barWidth = Math.max(1, x1 - x0 - gap);
     const bgmHeight = bgm * plotHeight;
     const seHeight = se * plotHeight;
+    const hue = (i / Math.max(1, bgmData.length - 1)) * 240 + (now / 90) % 42;
     if (bgmHeight > 0.7) {
       ctx.fillStyle = "rgba(132, 118, 102, 0.46)";
       ctx.fillRect(barX, plotBottom - bgmHeight, barWidth, bgmHeight);
+      if (gamingnessPulse > 0) {
+        ctx.shadowBlur = 8 + gamingnessPulse * 22;
+        ctx.shadowColor = `hsla(${hue}, 96%, 66%, ${0.1 + gamingnessPulse * 0.26})`;
+        ctx.fillStyle = `hsla(${hue}, 94%, ${60 + gamingnessPulse * 10}%, ${gamingnessPulse * 0.34})`;
+        ctx.fillRect(barX, plotBottom - bgmHeight, barWidth, bgmHeight);
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = "transparent";
+      }
     }
     const innerBarWidth = Math.max(1.2, barWidth * 0.56);
     const innerBarX = barX + (barWidth - innerBarWidth) / 2;
     if (seHeight > 0.7) {
       ctx.fillStyle = "rgba(230, 222, 212, 0.62)";
       ctx.fillRect(innerBarX, plotBottom - seHeight, innerBarWidth, seHeight);
+      if (gamingnessPulse > 0) {
+        ctx.shadowBlur = 6 + gamingnessPulse * 18;
+        ctx.shadowColor = `hsla(${(hue + 68) % 360}, 96%, 72%, ${0.08 + gamingnessPulse * 0.2})`;
+        ctx.fillStyle = `hsla(${(hue + 68) % 360}, 90%, ${68 + gamingnessPulse * 8}%, ${gamingnessPulse * 0.24})`;
+        ctx.fillRect(innerBarX, plotBottom - seHeight, innerBarWidth, seHeight);
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = "transparent";
+      }
     }
 
     const seShare = se / Math.max(0.001, bgm + se);

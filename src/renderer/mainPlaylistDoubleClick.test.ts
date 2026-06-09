@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
 const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+const styleSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
 describe("Main View playlist row double click", () => {
   it("jumps playback to the double-clicked enabled playlist item", () => {
@@ -20,6 +21,16 @@ describe("Main View playlist row double click", () => {
     expect(appSource).toContain("schedulePlaylistTimers(item, index, track, plannedMs, debugRate, safeStartElapsedMs)");
     expect(appSource).toContain("onSeek?.(ratio * safePlannedMs)");
     expect(appSource).toContain("event.stopPropagation();");
+  });
+
+  it("uses a play cursor on the expanded playlist progress bar", () => {
+    const progressStyle = styleSource.slice(styleSource.indexOf(".playlist-progress {"), styleSource.indexOf(".playlist-progress-loop,"));
+    expect(styleSource).toContain("--play-seek-cursor: url(\"data:image/svg+xml");
+    expect(progressStyle).toContain("cursor: var(--play-seek-cursor);");
+    expect(appSource).not.toContain("data-seek-tooltip");
+    expect(styleSource).not.toContain(".playlist-progress-anchor::after");
+    expect(progressStyle).not.toContain("cursor: crosshair;");
+    expect(progressStyle).not.toContain("cursor: ew-resize;");
   });
 
   it("maps expanded loop playback time back to the audio file offset", () => {

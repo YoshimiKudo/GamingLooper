@@ -91,6 +91,10 @@ function preventBrokenPipeCrash(): void {
   };
 
   for (const stream of [process.stdout, process.stderr]) {
+    const writable = stream as NodeJS.WritableStream & {
+      _write?: (chunk: unknown, encoding: BufferEncoding, callback: (error?: Error | null) => void) => void;
+      emit: (eventName: string | symbol, ...args: unknown[]) => boolean;
+    };
     const originalWrite = stream.write.bind(stream) as (...args: unknown[]) => boolean;
     stream.write = ((...args: unknown[]) => {
       try {
@@ -100,6 +104,29 @@ function preventBrokenPipeCrash(): void {
         throw error;
       }
     }) as NodeJS.WritableStream["write"];
+
+    const originalInternalWrite = writable._write?.bind(stream);
+    if (originalInternalWrite) {
+      writable._write = (chunk: unknown, encoding: BufferEncoding, callback: (error?: Error | null) => void) => {
+        try {
+          originalInternalWrite(chunk, encoding, (error?: Error | null) => {
+            callback(isBrokenPipe(error) ? null : error);
+          });
+        } catch (error) {
+          if (isBrokenPipe(error)) {
+            callback(null);
+            return;
+          }
+          throw error;
+        }
+      };
+    }
+
+    const originalEmit = writable.emit.bind(stream);
+    writable.emit = (eventName: string | symbol, ...args: unknown[]) => {
+      if (eventName === "error" && isBrokenPipe(args[0])) return false;
+      return originalEmit(eventName, ...args);
+    };
 
     stream.prependListener("error", (error) => {
       if (isBrokenPipe(error)) return;
@@ -123,6 +150,19 @@ function preventBrokenPipeCrash(): void {
     if (isBrokenPipe(error)) return;
     throw error;
   });
+
+  process.prependListener("unhandledRejection", (reason) => {
+    if (isBrokenPipe(reason)) return;
+    throw reason;
+  });
+
+  const originalProcessEmit = process.emit.bind(process) as (eventName: string | symbol, ...args: unknown[]) => boolean;
+  process.emit = ((eventName: string | symbol, ...args: unknown[]) => {
+    if ((eventName === "uncaughtException" || eventName === "unhandledRejection") && isBrokenPipe(args[0])) {
+      return false;
+    }
+    return originalProcessEmit(eventName, ...args);
+  }) as NodeJS.Process["emit"];
 }
 
 function handleIpc<T>(channel: string, listener: (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => T | Promise<T>): void {

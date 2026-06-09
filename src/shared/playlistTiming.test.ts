@@ -43,24 +43,24 @@ describe("Build Sequencer timing with sample BGM fixtures", () => {
     expect(getPlaylistFadeStartMs(getPlaylistPlayMs(track, rule), getPlaylistFadeMs(track, rule))).toBe(55000);
   });
 
-  it("keeps Time mode fade after the loop marker when duration is too short", () => {
+  it("requires Time mode to be longer than fade without adding the loop marker offset", () => {
     const track = withLoop(makeTrack(samples.find((sample) => sample.name === "Raining Pale Blood.wav")!), 5000, 15000);
     const rule: PlaylistRule = { mode: "duration", durationMs: 12000, fadeOutMs: 20000 };
 
-    expect(getPlaylistMinimumDurationMs(track, rule)).toBe(26000);
-    expect(getPlaylistPlayMs(track, rule)).toBe(26000);
+    expect(getPlaylistMinimumDurationMs(track, rule)).toBe(21000);
+    expect(getPlaylistPlayMs(track, rule)).toBe(21000);
     expect(getPlaylistDurationInputMs(track, rule)).toBe(12000);
     expect(getPlaylistFadeMs(track, rule)).toBe(20000);
-    expect(getPlaylistFadeStartMs(getPlaylistPlayMs(track, rule), getPlaylistFadeMs(track, rule))).toBe(6000);
+    expect(getPlaylistFadeStartMs(getPlaylistPlayMs(track, rule), getPlaylistFadeMs(track, rule))).toBe(1000);
   });
 
-  it("raises the user case where Time 10 and Fade 8 would fade before the loop marker", () => {
+  it("allows Time 10 and Fade 8 even when fade starts before the loop marker", () => {
     const track = withLoop(makeTrack(samples.find((sample) => sample.name === "Gaiming Slug.wav")!), 5000, 25000);
     const rule: PlaylistRule = { mode: "duration", durationMs: 10000, fadeOutMs: 8000 };
 
-    expect(getPlaylistMinimumDurationMs(track, rule)).toBe(14000);
-    expect(getPlaylistPlayMs(track, rule)).toBe(14000);
-    expect(getPlaylistFadeStartMs(getPlaylistPlayMs(track, rule), getPlaylistFadeMs(track, rule))).toBe(6000);
+    expect(getPlaylistMinimumDurationMs(track, rule)).toBe(9000);
+    expect(getPlaylistPlayMs(track, rule)).toBe(10000);
+    expect(getPlaylistFadeStartMs(getPlaylistPlayMs(track, rule), getPlaylistFadeMs(track, rule))).toBe(2000);
   });
 
   it("keeps Time 12 and Fade 8 as 4 seconds of normal playback followed by 8 seconds of fade when the loop starts at 0", () => {

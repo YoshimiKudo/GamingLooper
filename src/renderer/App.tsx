@@ -793,6 +793,7 @@ function viewTransitionName(prefix: string, id: string): string {
 
 const gamingnessThresholds = [10, 30, 80, 150, 666] as const;
 const baseGamingnessMax = 100;
+const gamingnessEffectMaxValue = 240;
 const gamingnessStorageMax = loadExpOverflowBonusMax + baseGamingnessMax + gamingnessThresholds.length * 10;
 const loadCountOverflowAt = 1024;
 const seSetExpAwardLimit = 300;
@@ -895,6 +896,7 @@ function App(): ReactElement {
   const detectionSettings = project.detection;
   const gamingnessProgress = useMemo(() => getGamingnessProgress(project), [project]);
   const effectiveGamingness = project.visual.potatoMode ? 0 : Math.min(project.visual.accentBrightness, gamingnessProgress.max);
+  const gamingnessEffectStrength = getGamingnessEffectStrength(effectiveGamingness);
   const seReadySummary = useMemo(() => summarizeSePreload(project.seAssignments, sePreloadMap), [project.seAssignments, sePreloadMap]);
   const visualActiveKeys = useMemo(() => {
     if (visualHoldKeys.size === 0) return activeKeys;
@@ -1534,8 +1536,8 @@ function App(): ReactElement {
     setHelpModal(mode);
   }
 
-  function showInvalidPlayTimeWarning(minimumSeconds: number, reason: PlayTimeMinimumReason = "fade"): void {
-    const message = formatPlayTimeMinimumStatus(minimumSeconds, language, reason);
+  function showInvalidPlayTimeWarning(minimumSeconds: number): void {
+    const message = formatPlayTimeMinimumStatus(minimumSeconds, language);
     setStatus(message);
     void requestConfirm({
       title: language === "ja" ? "Play時間の設定" : "Play Time",
@@ -1810,6 +1812,7 @@ function App(): ReactElement {
               sePositionMs={sePositionMs}
               detectionProgress={detectionProgress}
               gamingnessProgress={gamingnessProgress}
+              gamingnessEffectStrength={gamingnessEffectStrength}
               bgmAnalyser={audioRef.current.getBgmAnalyser()}
               seAnalyser={audioRef.current.getSeAnalyser()}
               seTransientLevel={seTransientLevel}
@@ -1869,8 +1872,12 @@ function App(): ReactElement {
               onSavePlaylistAs={() => void savePlaylistAs()}
               onOverwritePlaylist={overwriteActivePlaylist}
               canLoadStoredLists={Boolean(projectStorePath)}
+              onEditSavedPlaylist={(id) => loadSavedPlaylist(id)}
               onActivateSavedPlaylist={(id) => void activateSavedPlaylist(id)}
               onExportSavedPlaylist={(id) => void exportSavedPlaylist(id)}
+              onDeleteSavedPlaylist={(id) => void deleteSavedPlaylist(id)}
+              onDuplicateSavedPlaylist={duplicateSavedPlaylist}
+              onRenameSavedPlaylist={(id) => void renameSavedPlaylist(id)}
               onImportSequenceFile={() => void importSequenceFile()}
               onSelectTrack={selectTrack}
               onLoopChange={updateSelectedLoop}
@@ -1888,7 +1895,10 @@ function App(): ReactElement {
               onMovePlaylistItem={movePlaylistItem}
               onReorderPlaylistItem={reorderPlaylistItem}
               onRemovePlaylistItemToSource={removePlaylistItemToSource}
-              onPlayTrack={() => void playSelectedTrack()}
+              onDuplicatePlaylistItem={duplicatePlaylistItem}
+              onDeletePlaylistItem={deletePlaylistItem}
+              onDeleteSourceTrack={deleteSourceTrack}
+              onPlayTrack={(trackId) => void playTrack(trackId ?? projectRef.current.selectedTrackId ?? selectedTrack?.id ?? null)}
               onStop={stopPlayback}
               onPlayBeforeLoop={() => void playSelectedTrackBeforeLoop()}
               onBgmSeek={(ms) => void seekSelectedBgm(ms)}
@@ -2921,8 +2931,9 @@ function App(): ReactElement {
     }
   }
 
-  async function playSelectedTrack(): Promise<void> {
-    if (!selectedTrack) {
+  async function playTrack(trackId?: string | null): Promise<void> {
+    const track = projectRef.current.bgmTracks.find((candidate) => candidate.id === trackId) ?? selectedTrack;
+    if (!track) {
       setStatus("Import or select a BGM track first.");
       return;
     }
@@ -2931,18 +2942,23 @@ function App(): ReactElement {
     try {
       await audioRef.current.ready();
       audioRef.current.setMix(projectRef.current.mix);
-      await audioRef.current.playBgm(selectedTrack, { loop: true });
+      await audioRef.current.playBgm(track, { loop: true });
       positionMsRef.current = 0;
       bgmPositionStoreRef.current.set(0);
       updateDisplayedBgmPositionMs(0);
       setAudioReadyTick((value) => value + 1);
-      const nextPlayback: PlaybackState = { mode: "track", trackId: selectedTrack.id, startedAt: performance.now(), rate: debugPlaybackRateRef.current };
+      setProjectState((draft) => ({ ...draft, selectedTrackId: track.id }), { history: false });
+      const nextPlayback: PlaybackState = { mode: "track", trackId: track.id, startedAt: performance.now(), rate: debugPlaybackRateRef.current };
       playbackRef.current = nextPlayback;
       setPlayback(nextPlayback);
-      setStatus(`Track play: ${selectedTrack.fileName}`);
+      setStatus(`Track play: ${track.fileName}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "BGM playback failed.");
     }
+  }
+
+  async function playSelectedTrack(): Promise<void> {
+    await playTrack(projectRef.current.selectedTrackId ?? selectedTrack?.id ?? null);
   }
 
   async function playSelectedTrackBeforeLoop(): Promise<void> {
@@ -3277,6 +3293,23 @@ function App(): ReactElement {
     }
   }
 
+  function stopPlaybackForUnavailableTracks(trackIds: Set<string>): void {
+    const shouldStopBgm =
+      (projectRef.current.selectedTrackId !== null && trackIds.has(projectRef.current.selectedTrackId)) ||
+      (playbackRef.current.mode !== "stopped" && trackIds.has(playbackRef.current.trackId));
+    if (!shouldStopBgm) return;
+
+    commitPlaylistListeningTime();
+    clearPlaylistTimers();
+    audioRef.current.stopBgm(80);
+    positionMsRef.current = 0;
+    bgmPositionStoreRef.current.set(0);
+    updateDisplayedBgmPositionMs(0);
+    const stoppedPlayback: PlaybackState = { mode: "stopped" };
+    playbackRef.current = stoppedPlayback;
+    setPlayback(stoppedPlayback);
+  }
+
   async function clearBgmSource(visibleSourceTrackIds: string[]): Promise<void> {
     const result = clearVisibleSourceTracks(projectRef.current, visibleSourceTrackIds);
     const affectedIds = [...result.clearedIds, ...result.skippedReferencedIds];
@@ -3300,21 +3333,7 @@ function App(): ReactElement {
       return;
     }
 
-    const clearedIdSet = new Set(affectedIds);
-    const shouldStopBgm =
-      (projectRef.current.selectedTrackId !== null && clearedIdSet.has(projectRef.current.selectedTrackId)) ||
-      (playbackRef.current.mode !== "stopped" && clearedIdSet.has(playbackRef.current.trackId));
-    if (shouldStopBgm) {
-      commitPlaylistListeningTime();
-      clearPlaylistTimers();
-      audioRef.current.stopBgm(80);
-      positionMsRef.current = 0;
-      bgmPositionStoreRef.current.set(0);
-      updateDisplayedBgmPositionMs(0);
-      const stoppedPlayback: PlaybackState = { mode: "stopped" };
-      playbackRef.current = stoppedPlayback;
-      setPlayback(stoppedPlayback);
-    }
+    stopPlaybackForUnavailableTracks(new Set(affectedIds));
 
     setProjectState(() => result.project);
     setStatus(
@@ -3324,11 +3343,105 @@ function App(): ReactElement {
     );
   }
 
+  function deleteSourceTrack(trackId: string): void {
+    const track = projectRef.current.bgmTracks.find((candidate) => candidate.id === trackId);
+    if (!track) return;
+    const result = clearVisibleSourceTracks(projectRef.current, [trackId]);
+    const affectedIds = [...result.clearedIds, ...result.skippedReferencedIds];
+    if (affectedIds.length === 0) {
+      setStatus(language === "ja" ? "削除できるBGM Source曲がありません。" : "No BGM Source track to delete.");
+      return;
+    }
+    stopPlaybackForUnavailableTracks(new Set(affectedIds));
+    setProjectState(() => result.project);
+    setStatus(
+      language === "ja"
+        ? `BGM Sourceから削除しました: ${track.fileName}${result.skippedReferencedIds.length > 0 ? "（保存済みList用のデータは保持）" : ""}`
+        : `Removed from BGM Source: ${track.fileName}${result.skippedReferencedIds.length > 0 ? " (kept data for saved lists)" : ""}.`
+    );
+  }
+
+  function deletePlaylistItem(itemId: string): void {
+    const currentProject = projectRef.current;
+    const item = currentProject.playlist.find((candidate) => candidate.id === itemId);
+    const track = item ? currentProject.bgmTracks.find((candidate) => candidate.id === item.trackId) : null;
+    if (!item || !track) return;
+    const playlistAfterRemoval = currentProject.playlist.filter((candidate) => candidate.id !== itemId);
+    const stillInCurrentPlaylist = playlistAfterRemoval.some((candidate) => candidate.trackId === track.id);
+    const unavailableIds = stillInCurrentPlaylist ? new Set<string>() : new Set([track.id]);
+    const deletingPlayingPlaylistItem = playbackRef.current.mode === "playlist" && playbackRef.current.itemId === itemId;
+    stopPlaybackForUnavailableTracks(deletingPlayingPlaylistItem ? new Set([track.id]) : unavailableIds);
+    setProjectState((draft) => {
+      const playlist = draft.playlist.filter((candidate) => candidate.id !== itemId);
+      const referencedByCurrentPlaylist = playlist.some((candidate) => candidate.trackId === track.id);
+      const referencedBySavedList = draft.savedPlaylists.some((playlist) => playlist.items.some((candidate) => candidate.trackId === track.id));
+      const shouldKeepBgmTrack = referencedByCurrentPlaylist || referencedBySavedList;
+      const bgmTracks = shouldKeepBgmTrack ? draft.bgmTracks : draft.bgmTracks.filter((candidate) => candidate.id !== track.id);
+      const hiddenSourceIds = new Set(draft.sourceHiddenTrackIds);
+      if (referencedBySavedList && !referencedByCurrentPlaylist) {
+        hiddenSourceIds.add(track.id);
+      } else if (referencedByCurrentPlaylist) {
+        hiddenSourceIds.delete(track.id);
+      } else {
+        hiddenSourceIds.delete(track.id);
+      }
+      const nextUnavailableIds = referencedByCurrentPlaylist ? new Set<string>() : new Set([track.id]);
+      return {
+        ...draft,
+        activePlaylistId: null,
+        playlistRating: 0,
+        playlistCumulativePlayMs: 0,
+        playlist,
+        bgmTracks,
+        sourceHiddenTrackIds: Array.from(hiddenSourceIds).filter((id) => bgmTracks.some((candidate) => candidate.id === id)),
+        selectedTrackId: getNextSelectedTrackIdAfterRemoval(draft.selectedTrackId, nextUnavailableIds, playlist.map((candidate) => candidate.trackId), bgmTracks)
+      };
+    });
+    setStatus(
+      language === "ja"
+        ? `Build Sequencerから削除しました: ${track.fileName}${currentProject.savedPlaylists.some((playlist) => playlist.items.some((candidate) => candidate.trackId === track.id)) ? "（保存済みList用のデータは保持）" : ""}`
+        : `Removed from Build Sequencer: ${track.fileName}.`
+    );
+  }
+
+  function duplicatePlaylistItem(itemId: string): void {
+    const currentProject = projectRef.current;
+    const item = currentProject.playlist.find((candidate) => candidate.id === itemId);
+    const track = item ? currentProject.bgmTracks.find((candidate) => candidate.id === item.trackId) : null;
+    if (!item || !track) return;
+    setProjectState((draft) => {
+      const index = draft.playlist.findIndex((candidate) => candidate.id === itemId);
+      if (index < 0) return draft;
+      const sourceItem = draft.playlist[index];
+      if (!sourceItem) return draft;
+      const duplicate: PlaylistItem = {
+        ...makePlaylistItem(sourceItem.trackId, index + 1),
+        enabled: sourceItem.enabled,
+        rule: clonePlaylistRule(sourceItem.rule),
+        note: sourceItem.note
+      };
+      return {
+        ...draft,
+        playlistCreated: true,
+        playlistRating: 0,
+        playlistCumulativePlayMs: 0,
+        activePlaylistId: null,
+        selectedTrackId: sourceItem.trackId,
+        playlist: [
+          ...draft.playlist.slice(0, index + 1),
+          duplicate,
+          ...draft.playlist.slice(index + 1)
+        ]
+      };
+    });
+    setStatus(language === "ja" ? `Build Sequencerで複製しました: ${track.fileName}` : `Duplicated in Build Sequencer: ${track.fileName}`);
+  }
+
   async function autoLoopSourceTracks(trackIds: string[]): Promise<void> {
     const targetIdSet = new Set(trackIds);
     const targets = projectRef.current.bgmTracks.filter((track) => targetIdSet.has(track.id));
     if (targets.length === 0) {
-      setStatus(language === "ja" ? "Auto Loop対象のBGM Source曲がありません。" : "No BGM Source tracks selected for Auto Loop.");
+      setStatus(language === "ja" ? "Auto Loop対象のBGMがありません。" : "No BGM tracks selected for Auto Loop.");
       return;
     }
     await runDetection(targets, "Auto Loop");
@@ -3937,6 +4050,65 @@ function App(): ReactElement {
     await playPlaylistAt(0);
   }
 
+  async function deleteSavedPlaylist(id: string): Promise<void> {
+    const playlist = projectRef.current.savedPlaylists.find((item) => item.id === id);
+    if (!playlist) return;
+    if (
+      !(await requestConfirm({
+        title: language === "ja" ? "Seq Listを削除" : "Delete Seq List",
+        message: language === "ja" ? `「${playlist.name}」を削除しますか？` : `Delete "${playlist.name}"?`,
+        detail: language === "ja" ? "保存済みSeq Listだけを削除します。音声ファイル本体は削除しません。" : "Only the saved Seq List entry is removed. Audio files are not deleted.",
+        confirmLabel: language === "ja" ? "削除" : "Delete",
+        danger: true
+      }))
+    ) {
+      return;
+    }
+    setProjectState((draft) => ({
+      ...draft,
+      activePlaylistId: draft.activePlaylistId === id ? null : draft.activePlaylistId,
+      savedPlaylists: draft.savedPlaylists.filter((item) => item.id !== id)
+    }));
+    setStatus(language === "ja" ? `Seq Listを削除しました: ${playlist.name}` : `Seq List deleted: ${playlist.name}`);
+  }
+
+  function duplicateSavedPlaylist(id: string): void {
+    const playlist = projectRef.current.savedPlaylists.find((item) => item.id === id);
+    if (!playlist) return;
+    const baseName = language === "ja" ? `${playlist.name} のコピー` : `${playlist.name} Copy`;
+    const name = getUniqueSavedPlaylistName(baseName, projectRef.current.savedPlaylists);
+    const duplicate = {
+      ...cloneSavedPlaylist(playlist),
+      id: createLocalId(),
+      name
+    };
+    setProjectState((draft) => ({
+      ...draft,
+      savedPlaylists: [...draft.savedPlaylists, duplicate]
+    }));
+    setStatus(language === "ja" ? `Seq Listを複製しました: ${name}` : `Seq List duplicated: ${name}`);
+  }
+
+  async function renameSavedPlaylist(id: string): Promise<void> {
+    const playlist = projectRef.current.savedPlaylists.find((item) => item.id === id);
+    if (!playlist) return;
+    const name = await requestPrompt({
+      title: language === "ja" ? "名前を変更して保存" : "Rename and Save",
+      message: language === "ja" ? "Seq List名を入力してください。" : "Enter a Seq List name.",
+      initialValue: playlist.name,
+      confirmLabel: t("save")
+    });
+    if (name === null) return;
+    const safeName = sanitizePlaylistName(name, playlist.name);
+    if (!safeName) return;
+    setProjectState((draft) => ({
+      ...draft,
+      playlistName: draft.activePlaylistId === id ? safeName : draft.playlistName,
+      savedPlaylists: draft.savedPlaylists.map((item) => (item.id === id ? { ...item, name: safeName } : item))
+    }));
+    setStatus(language === "ja" ? `Seq List名を保存しました: ${safeName}` : `Seq List renamed: ${safeName}`);
+  }
+
   async function exportSavedPlaylist(id: string): Promise<void> {
     const currentProject = projectRef.current;
     const playlist = currentProject.savedPlaylists.find((item) => item.id === id);
@@ -4368,6 +4540,7 @@ function MainView({
   sePositionMs,
   detectionProgress,
   gamingnessProgress,
+  gamingnessEffectStrength,
   bgmAnalyser,
   seAnalyser,
   seTransientLevel,
@@ -4419,6 +4592,7 @@ function MainView({
   sePositionMs: number;
   detectionProgress: DetectionProgress | null;
   gamingnessProgress: GamingnessProgress;
+  gamingnessEffectStrength: number;
   bgmAnalyser: AnalyserNode | null;
   seAnalyser: AnalyserNode | null;
   seTransientLevel: number;
@@ -4688,6 +4862,7 @@ function MainView({
           manualLevel={project.visual.analyzerManualLevel}
           voiceCount={voiceCount}
           seTransientLevel={seTransientLevel}
+          gamingnessEffectStrength={gamingnessEffectStrength}
         />
       </div>
     </div>
@@ -5621,6 +5796,11 @@ function PromptDialog({
   );
 }
 
+type TrackContextMenuState =
+  | { kind: "builder"; itemId: string; trackId: string; x: number; y: number }
+  | { kind: "source"; trackId: string; x: number; y: number }
+  | { kind: "saved-list"; playlistId: string; x: number; y: number };
+
 function LoopPlaylistView({
   project,
   selectedTrack,
@@ -5642,8 +5822,12 @@ function LoopPlaylistView({
   onSavePlaylistAs,
   onOverwritePlaylist,
   canLoadStoredLists,
+  onEditSavedPlaylist,
   onActivateSavedPlaylist,
   onExportSavedPlaylist,
+  onDeleteSavedPlaylist,
+  onDuplicateSavedPlaylist,
+  onRenameSavedPlaylist,
   onImportSequenceFile,
   onSelectTrack,
   onLoopChange,
@@ -5661,6 +5845,9 @@ function LoopPlaylistView({
   onMovePlaylistItem,
   onReorderPlaylistItem,
   onRemovePlaylistItemToSource,
+  onDuplicatePlaylistItem,
+  onDeletePlaylistItem,
+  onDeleteSourceTrack,
   onPlayTrack,
   onStop,
   onPlayBeforeLoop,
@@ -5689,8 +5876,12 @@ function LoopPlaylistView({
   onSavePlaylistAs: () => void;
   onOverwritePlaylist: () => void;
   canLoadStoredLists: boolean;
+  onEditSavedPlaylist: (id: string) => void;
   onActivateSavedPlaylist: (id: string) => void;
   onExportSavedPlaylist: (id: string) => void;
+  onDeleteSavedPlaylist: (id: string) => void | Promise<void>;
+  onDuplicateSavedPlaylist: (id: string) => void;
+  onRenameSavedPlaylist: (id: string) => void | Promise<void>;
   onImportSequenceFile: () => void;
   onSelectTrack: (trackId: string) => void;
   onLoopChange: (loop: LoopMarker, options?: { history?: boolean }) => void;
@@ -5702,13 +5893,16 @@ function LoopPlaylistView({
   onApplyPlaylistLoopCountToAll: (loopCount: number, itemIds?: string[]) => void;
   onApplyPlaylistDurationToAll: (durationSeconds: number, itemIds?: string[]) => void;
   onApplyPlaylistFadeToAll: (fadeOutMs: number, itemIds?: string[]) => void;
-  onInvalidPlayTime: (minimumSeconds: number, reason?: PlayTimeMinimumReason) => void;
+  onInvalidPlayTime: (minimumSeconds: number) => void;
   onCopyPlaylistRules: () => void;
   onPastePlaylistRules: () => void;
   onMovePlaylistItem: (id: string, direction: -1 | 1) => void;
   onReorderPlaylistItem: (id: string, targetIndex: number) => void;
   onRemovePlaylistItemToSource: (id: string) => void;
-  onPlayTrack: () => void;
+  onDuplicatePlaylistItem: (id: string) => void;
+  onDeletePlaylistItem: (id: string) => void;
+  onDeleteSourceTrack: (trackId: string) => void;
+  onPlayTrack: (trackId?: string) => void;
   onStop: () => void;
   onPlayBeforeLoop: () => void;
   onBgmSeek: (ms: number) => void;
@@ -5747,6 +5941,7 @@ function LoopPlaylistView({
   const sourceDragOffsetRef = useRef({ x: 0, y: 0 });
   const playlistRowDragBlockedRef = useRef(false);
   const previousPlaylistLengthRef = useRef(project.playlist.length);
+  const previousPlaylistItemIdsRef = useRef(project.playlist.map((item) => item.id));
   const previousSavedListLengthRef = useRef(project.savedPlaylists.length);
   const sourceSelectionAnchorRef = useRef<string | null>(null);
   const playlistSelectionAnchorRef = useRef<string | null>(null);
@@ -5774,6 +5969,7 @@ function LoopPlaylistView({
   const [listBuilderColumns, setListBuilderColumns] = useState({ list: 22, source: 40 });
   const listBuilderLayoutRef = useRef<HTMLDivElement | null>(null);
   const sourceTrackScrollRef = useRef<HTMLDivElement | null>(null);
+  const builderSequenceScrollRef = useRef<HTMLDivElement | null>(null);
   const visibleSourceTracks = useMemo(() => filterAndSortSourceTracks(sourceTracks, sourceSearchQuery), [sourceSearchQuery, sourceTracks]);
   const visibleSourceTrackIds = useMemo(() => visibleSourceTracks.map((track) => track.id), [visibleSourceTracks]);
   const draggableSourceTrackIds = useMemo(
@@ -5802,11 +5998,30 @@ function LoopPlaylistView({
   const isSelectedBgmPlaying = Boolean(selectedTrack && playback.mode !== "stopped" && playback.trackId === selectedTrack.id);
   const [builderRuleTooltip, setBuilderRuleTooltip] = useState<{ text: string; left: number; top: number; placement: "above" | "below" } | null>(null);
   const [playTimeDrafts, setPlayTimeDrafts] = useState<Record<string, string>>({});
+  const [trackContextMenu, setTrackContextMenu] = useState<TrackContextMenuState | null>(null);
   const builderRuleTooltipTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => clearBuilderRuleTooltipTimer();
   }, []);
+
+  useEffect(() => {
+    if (!trackContextMenu) return undefined;
+    const close = (): void => setTrackContextMenu(null);
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("blur", close);
+    };
+  }, [trackContextMenu]);
 
   useEffect(() => {
     setPlayTimeDrafts((current) => {
@@ -5839,16 +6054,38 @@ function LoopPlaylistView({
   }, [project.playlist]);
 
   useEffect(() => {
+    const previousIds = new Set(previousPlaylistItemIdsRef.current);
     if (project.playlist.length > previousPlaylistLengthRef.current) {
-      setAddedPlaylistItemId(project.playlist[project.playlist.length - 1]?.id ?? null);
+      const addedItem = project.playlist.find((item) => !previousIds.has(item.id)) ?? project.playlist[project.playlist.length - 1] ?? null;
+      setAddedPlaylistItemId(addedItem?.id ?? null);
     }
     previousPlaylistLengthRef.current = project.playlist.length;
+    previousPlaylistItemIdsRef.current = project.playlist.map((item) => item.id);
   }, [project.playlist]);
 
   useEffect(() => {
     if (!addedPlaylistItemId) return undefined;
+    const animationFrame = window.requestAnimationFrame(() => {
+      const scroll = builderSequenceScrollRef.current;
+      if (!scroll) return;
+      const target = Array.from(scroll.querySelectorAll<HTMLElement>("[data-playlist-item-id]")).find(
+        (row) => row.dataset.playlistItemId === addedPlaylistItemId
+      );
+      if (!target) return;
+      const scrollRect = scroll.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const padding = 10;
+      if (targetRect.top < scrollRect.top + padding) {
+        scroll.scrollTo({ top: scroll.scrollTop + targetRect.top - scrollRect.top - padding, behavior: "smooth" });
+      } else if (targetRect.bottom > scrollRect.bottom - padding) {
+        scroll.scrollTo({ top: scroll.scrollTop + targetRect.bottom - scrollRect.bottom + padding, behavior: "smooth" });
+      }
+    });
     const timeout = window.setTimeout(() => setAddedPlaylistItemId(null), 720);
-    return () => window.clearTimeout(timeout);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.clearTimeout(timeout);
+    };
   }, [addedPlaylistItemId]);
 
   useEffect(() => {
@@ -5976,6 +6213,39 @@ function LoopPlaylistView({
     playlistSelectionAnchorRef.current = itemId;
     setSelectedPlaylistItemIds(new Set([itemId]));
     onSelectTrack(trackId);
+  }
+
+  function getTrackContextMenuPosition(event: ReactMouseEvent<HTMLElement>): { x: number; y: number } {
+    const width = 218;
+    const height = 164;
+    return {
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8))
+    };
+  }
+
+  function handlePlaylistRowDoubleClick(event: ReactMouseEvent<HTMLElement>, itemId: string, trackId: string): void {
+    if (blocksPlaylistRowDrag(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    clearDragState();
+    playlistSelectionAnchorRef.current = itemId;
+    setSelectedPlaylistItemIds(new Set([itemId]));
+    onSelectTrack(trackId);
+    onPlayTrack(trackId);
+  }
+
+  function handlePlaylistRowContextMenu(event: ReactMouseEvent<HTMLElement>, itemId: string, trackId: string): void {
+    if (blocksPlaylistRowDrag(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    clearDragState();
+    playlistSelectionAnchorRef.current = itemId;
+    setSelectedPlaylistItemIds(new Set([itemId]));
+    setSelectedSourceTrackIds(new Set());
+    onSelectTrack(trackId);
+    const position = getTrackContextMenuPosition(event);
+    setTrackContextMenu({ kind: "builder", itemId, trackId, ...position });
   }
 
   function updatePlaylistDragGhostY(clientY: number): void {
@@ -6261,6 +6531,18 @@ function LoopPlaylistView({
     requestAddTracks([trackId], playlistTracks.length);
   }
 
+  function handleSourceTrackContextMenu(event: ReactMouseEvent<HTMLElement>, trackId: string): void {
+    event.preventDefault();
+    event.stopPropagation();
+    clearDragState();
+    sourceSelectionAnchorRef.current = trackId;
+    setSelectedSourceTrackIds(draggableSourceTrackIdSet.has(trackId) ? new Set([trackId]) : new Set());
+    setSelectedPlaylistItemIds(new Set());
+    onSelectTrack(trackId);
+    const position = getTrackContextMenuPosition(event);
+    setTrackContextMenu({ kind: "source", trackId, ...position });
+  }
+
   function handleSourceTrackKeyDown(event: ReactKeyboardEvent<HTMLElement>, trackId: string): void {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
@@ -6426,7 +6708,7 @@ function LoopPlaylistView({
     const playTimeSeconds = Number(rawValue);
     if (!canUsePlayTimeSeconds(playTimeSeconds, track, rule)) {
       const minimumSeconds = getMinimumPlayTimeSeconds(track, rule);
-      onInvalidPlayTime(minimumSeconds, getPlayTimeMinimumReason(track, rule));
+      onInvalidPlayTime(minimumSeconds);
       resetPlayTimeDraft(item.id);
       return;
     }
@@ -6439,10 +6721,29 @@ function LoopPlaylistView({
     );
   }
 
-  function activateSavedPlaylistFromCard(id: string): void {
+  function loadSavedPlaylistFromCard(id: string): void {
+    setSelectedSavedPlaylistId(id);
+    setPickedPlaylistId(id);
+    onEditSavedPlaylist(id);
+  }
+
+  function activateSavedPlaylistFromCard(event: ReactMouseEvent<HTMLElement>, id: string): void {
+    event.preventDefault();
+    event.stopPropagation();
     setSelectedSavedPlaylistId(id);
     setPickedPlaylistId(id);
     onActivateSavedPlaylist(id);
+  }
+
+  function handleSavedPlaylistContextMenu(event: ReactMouseEvent<HTMLElement>, id: string): void {
+    event.preventDefault();
+    event.stopPropagation();
+    clearDragState();
+    setSelectedSavedPlaylistId(id);
+    setSelectedPlaylistItemIds(new Set());
+    setSelectedSourceTrackIds(new Set());
+    const position = getTrackContextMenuPosition(event);
+    setTrackContextMenu({ kind: "saved-list", playlistId: id, ...position });
   }
 
   function updateListBuilderLeftSplit(clientX: number): void {
@@ -6470,16 +6771,16 @@ function LoopPlaylistView({
     return Math.round(getPlaylistFadeMs(first.track, first.item.rule) / 1000);
   }
 
-  function getBulkPlayTimeViolation(kind: "loop-count" | "duration" | "fade", safeValue: number): { minimumSeconds: number; reason: PlayTimeMinimumReason } | null {
+  function getBulkPlayTimeViolation(kind: "loop-count" | "duration" | "fade", safeValue: number): number | null {
     if (kind === "loop-count") return null;
-    let violation: { minimumSeconds: number; reason: PlayTimeMinimumReason } | null = null;
+    let violation: number | null = null;
     for (const { item, track } of bulkPlaylistTargets) {
       if (kind === "duration") {
         const nextRule = { mode: "duration", durationMs: safeValue * 1000, fadeOutMs: getRuleFadeMs(item.rule), loopCount: getStoredLoopCount(item.rule) } as PlaylistRule;
         if (!canUsePlayTimeSeconds(safeValue, track, nextRule)) {
           const minimumSeconds = getMinimumPlayTimeSeconds(track, nextRule);
-          if (!violation || minimumSeconds > violation.minimumSeconds) {
-            violation = { minimumSeconds, reason: getPlayTimeMinimumReason(track, nextRule) };
+          if (!violation || minimumSeconds > violation) {
+            violation = minimumSeconds;
           }
         }
         continue;
@@ -6489,8 +6790,8 @@ function LoopPlaylistView({
       const playTimeSeconds = Math.round(getPlaylistDurationInputMs(track, item.rule) / 1000);
       if (!canUsePlayTimeSeconds(playTimeSeconds, track, nextRule)) {
         const minimumSeconds = getMinimumPlayTimeSeconds(track, nextRule);
-        if (!violation || minimumSeconds > violation.minimumSeconds) {
-          violation = { minimumSeconds, reason: getPlayTimeMinimumReason(track, nextRule) };
+        if (!violation || minimumSeconds > violation) {
+          violation = minimumSeconds;
         }
       }
     }
@@ -6526,7 +6827,7 @@ function LoopPlaylistView({
     const safeValue = kind === "loop-count" ? Math.round(clampNumber(numericValue, 1, 99, defaultPlaylistLoopCount)) : Math.max(minValue, Math.round(numericValue));
     const playTimeViolation = getBulkPlayTimeViolation(kind, safeValue);
     if (playTimeViolation) {
-      onInvalidPlayTime(playTimeViolation.minimumSeconds, playTimeViolation.reason);
+      onInvalidPlayTime(playTimeViolation);
       return;
     }
     const detail = isJa
@@ -6548,6 +6849,85 @@ function LoopPlaylistView({
       return;
     }
     onApplyPlaylistFadeToAll(safeValue * 1000, bulkPlaylistTargetItemIds);
+  }
+
+  function getTrackContextMenuItems(state: TrackContextMenuState): Array<{ id: string; label: string; danger?: boolean; disabled?: boolean; onSelect: () => void }> {
+    const isJa = project.ui.language === "ja";
+    const isProcessing = state.kind === "builder" || state.kind === "source" ? scanningTrackId === state.trackId || scanWaitingTrackIds.has(state.trackId) : false;
+    const run = (action: () => void | Promise<void>) => (): void => {
+      setTrackContextMenu(null);
+      void action();
+    };
+    if (state.kind === "saved-list") {
+      return [
+        {
+          id: "duplicate",
+          label: isJa ? "複製" : "Duplicate",
+          onSelect: run(() => onDuplicateSavedPlaylist(state.playlistId))
+        },
+        {
+          id: "rename-save",
+          label: isJa ? "名前を変更して保存" : "Rename and Save",
+          onSelect: run(() => onRenameSavedPlaylist(state.playlistId))
+        },
+        {
+          id: "delete",
+          label: isJa ? "削除" : "Delete",
+          danger: true,
+          onSelect: run(() => onDeleteSavedPlaylist(state.playlistId))
+        }
+      ];
+    }
+    if (state.kind === "builder") {
+      return [
+        {
+          id: "move-source",
+          label: isJa ? "BGM Sourceへ戻す" : "Move to BGM Source",
+          disabled: isProcessing,
+          onSelect: run(() => onRemovePlaylistItemToSource(state.itemId))
+        },
+        {
+          id: "duplicate",
+          label: isJa ? "複製" : "Duplicate",
+          disabled: isProcessing,
+          onSelect: run(() => onDuplicatePlaylistItem(state.itemId))
+        },
+        {
+          id: "loop-scan",
+          label: "Loop Scan",
+          disabled: Boolean(detectionProgress) || isProcessing,
+          onSelect: run(() => onAutoLoopSourceTracks([state.trackId]))
+        },
+        {
+          id: "delete",
+          label: isJa ? "削除" : "Delete",
+          danger: true,
+          disabled: isProcessing,
+          onSelect: run(() => onDeletePlaylistItem(state.itemId))
+        }
+      ];
+    }
+    return [
+      {
+        id: "send-builder",
+        label: isJa ? "Build Sequencerへ送る" : "Send to Build Sequencer",
+        disabled: isProcessing || !draggableSourceTrackIdSet.has(state.trackId),
+        onSelect: run(() => requestAddTracks([state.trackId], playlistTracks.length))
+      },
+      {
+        id: "loop-scan",
+        label: "Loop Scan",
+        disabled: Boolean(detectionProgress) || isProcessing,
+        onSelect: run(() => onAutoLoopSourceTracks([state.trackId]))
+      },
+      {
+        id: "delete",
+        label: isJa ? "削除" : "Delete",
+        danger: true,
+        disabled: isProcessing,
+        onSelect: run(() => onDeleteSourceTrack(state.trackId))
+      }
+    ];
   }
 
   return (
@@ -6582,7 +6962,9 @@ function LoopPlaylistView({
                     <button
                       className={`saved-list-card ${project.activePlaylistId === playlist.id ? "selected" : ""} ${selectedSavedPlaylistId === playlist.id ? "load-target" : ""} ${completedPlaylistId === playlist.id ? "just-completed" : ""} ${pickedPlaylistId === playlist.id ? "picked" : ""}`}
                       type="button"
-                      onClick={() => activateSavedPlaylistFromCard(playlist.id)}
+                      onClick={() => loadSavedPlaylistFromCard(playlist.id)}
+                      onDoubleClick={(event) => activateSavedPlaylistFromCard(event, playlist.id)}
+                      onContextMenu={(event) => handleSavedPlaylistContextMenu(event, playlist.id)}
                     >
                       <strong>{playlist.name}</strong>
                       <span className="saved-list-song-count">{playlist.items.length} {t("songs")}</span>
@@ -6650,7 +7032,7 @@ function LoopPlaylistView({
               {t("overwrite")}
             </button>
           </div>
-          <div className="builder-sequence-scroll">
+          <div className="builder-sequence-scroll" ref={builderSequenceScrollRef}>
             {playlistTracks.length > 0 ? playlistTracks.map(({ item, track }, index) => {
               const rule = item.rule;
               const canUseLoopRules = Boolean(track.loop);
@@ -6658,21 +7040,25 @@ function LoopPlaylistView({
               const isScanningTrack = scanningTrackId === track.id;
               const isPlaylistItemPlaying = playback.mode === "playlist" && playback.itemId === item.id;
               const ruleControlsDisabled = isPlaylistItemPlaying;
+              const isPlaylistRowSelected = selectedPlaylistItemIds.has(item.id) || (selectedPlaylistItemIds.size === 0 && selectedTrack?.id === track.id);
               const playTimeSeconds = Math.round(getPlaylistDurationInputMs(track, rule) / 1000);
               const playTimeInputValue = playTimeDrafts[item.id] ?? String(playTimeSeconds);
               const previousRuleMode = getAdjacentPlaylistRuleMode(displayRuleMode, -1);
               const nextRuleMode = getAdjacentPlaylistRuleMode(displayRuleMode, 1);
               return (
                 <article
-                  className={`builder-song-row ${selectedTrack?.id === track.id ? "selected" : ""} ${selectedPlaylistItemIds.has(item.id) ? "multi-selected" : ""} ${draggingPlaylistItemId === item.id ? "dragging" : ""} ${dropTargetIndex === index ? "drop-target" : ""} ${index === playlistTracks.length - 1 && dropTargetIndex === playlistTracks.length ? "append-drop-target" : ""} ${addedPlaylistItemId === item.id ? "recently-added" : ""} ${reorderedPlaylistItemId === item.id ? "reordered-flash" : ""} ${pickedPlaylistId ? "retrieved-row" : ""} ${isScanningTrack ? "auto-loop-processing" : ""} ${ruleControlsDisabled ? "rule-edit-locked" : ""}`}
+                  className={`builder-song-row ${isPlaylistRowSelected ? "selected" : ""} ${selectedPlaylistItemIds.has(item.id) ? "multi-selected" : ""} ${draggingPlaylistItemId === item.id ? "dragging" : ""} ${dropTargetIndex === index ? "drop-target" : ""} ${index === playlistTracks.length - 1 && dropTargetIndex === playlistTracks.length ? "append-drop-target" : ""} ${addedPlaylistItemId === item.id ? "recently-added" : ""} ${reorderedPlaylistItemId === item.id ? "reordered-flash" : ""} ${pickedPlaylistId ? "retrieved-row" : ""} ${isScanningTrack ? "auto-loop-processing" : ""} ${ruleControlsDisabled ? "rule-edit-locked" : ""}`}
                   style={{ viewTransitionName: draggingPlaylistItemId ? viewTransitionName("playlist-item", item.id) : "none" } as CSSProperties}
                   key={item.id}
+                  data-playlist-item-id={item.id}
                   data-builder-index={index}
                   draggable={!isScanningTrack}
                   onPointerDownCapture={handlePlaylistRowPointerDownCapture}
                   onPointerUpCapture={clearPlaylistRowPointerBlock}
                   onPointerCancelCapture={clearPlaylistRowPointerBlock}
                   onClick={(event) => handlePlaylistRowClick(event, item.id, track.id)}
+                  onDoubleClick={(event) => handlePlaylistRowDoubleClick(event, item.id, track.id)}
+                  onContextMenu={(event) => handlePlaylistRowContextMenu(event, item.id, track.id)}
                   onDragStart={(event) => {
                     if (isScanningTrack || playlistRowDragBlockedRef.current || blocksPlaylistRowDrag(event.target)) {
                       event.preventDefault();
@@ -6822,7 +7208,7 @@ function LoopPlaylistView({
                             displayRuleMode === "duration" &&
                             !canUsePlayTimeSeconds(Math.round(getPlaylistDurationInputMs(track, rule) / 1000), track, nextRule)
                           ) {
-                            onInvalidPlayTime(getMinimumPlayTimeSeconds(track, nextRule), getPlayTimeMinimumReason(track, nextRule));
+                            onInvalidPlayTime(getMinimumPlayTimeSeconds(track, nextRule));
                             return;
                           }
                           onPlaylistRuleChangeForItem(item, track, nextRule, onPlaylistItemChange);
@@ -6995,6 +7381,7 @@ function LoopPlaylistView({
                   onPointerDown={(event) => beginSourcePointerDrag(event, track.id)}
                   onClick={(event) => handleSourceTrackClick(event, track.id)}
                   onDoubleClick={(event) => handleSourceTrackDoubleClick(event, track.id)}
+                  onContextMenu={(event) => handleSourceTrackContextMenu(event, track.id)}
                   onKeyDown={(event) => handleSourceTrackKeyDown(event, track.id)}
                   onDragStart={(event) => {
                     if (!canDragSourceTrack) {
@@ -7115,12 +7502,30 @@ function LoopPlaylistView({
             showPlayhead={isSelectedBgmPlaying}
             busLabel="BGM"
             panelTitle="BGM Monitor"
+            showLoopUnitToggle
+            footerActions={
+              <>
+                <button className="thin-button monitor-transport-button" type="button" disabled={!selectedTrack} onClick={() => onPlayTrack()}>
+                  <Play size={14} />
+                  {project.ui.language === "ja" ? "再生" : "Play"}
+                </button>
+                <button className="thin-button monitor-transport-button" type="button" disabled={!selectedTrack} onClick={onStop}>
+                  <Square size={13} />
+                  {project.ui.language === "ja" ? "停止" : "Stop"}
+                </button>
+                <button className="thin-button monitor-transport-button" type="button" disabled={!selectedTrack?.loop} onClick={onPlayBeforeLoop}>
+                  <Undo2 size={14} />
+                  {project.ui.language === "ja" ? "ループ確認" : "Loop Check"}
+                </button>
+              </>
+            }
             hideEmptyLabel
             isScanning={Boolean(detectionProgress && selectedTrack?.id === detectionProgress.currentTrackId)}
             isDeepScanning={Boolean(detectionProgress && selectedTrack?.id === detectionProgress.currentTrackId && detectionSettings.mode === "deep")}
           />
+          {false ? (
           <div className="list-builder-monitor-transport">
-            <button className="thin-button monitor-transport-button" type="button" disabled={!selectedTrack} onClick={onPlayTrack}>
+            <button className="thin-button monitor-transport-button" type="button" disabled={!selectedTrack} onClick={() => onPlayTrack()}>
               <Play size={14} />
               {project.ui.language === "ja" ? "再生" : "Play"}
             </button>
@@ -7133,8 +7538,31 @@ function LoopPlaylistView({
               {project.ui.language === "ja" ? "ループ確認" : "Loop Check"}
             </button>
           </div>
+          ) : null}
         </section>
       </div>
+      {trackContextMenu ? (
+        <div
+          className="track-context-menu"
+          style={{ left: trackContextMenu.x, top: trackContextMenu.y } as CSSProperties}
+          role="menu"
+          onPointerDown={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          {getTrackContextMenuItems(trackContextMenu).map((item) => (
+            <button
+              className={`track-context-menu-item ${item.danger ? "danger" : ""}`}
+              type="button"
+              role="menuitem"
+              key={item.id}
+              disabled={item.disabled}
+              onClick={item.onSelect}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {builderRuleTooltip ? (
         <div
           className={`builder-rule-tooltip-floating placement-${builderRuleTooltip.placement}`}
@@ -8922,6 +9350,21 @@ function createSavedPlaylist(name: string, items: PlaylistItem[], id = createLoc
   };
 }
 
+function getUniqueSavedPlaylistName(baseName: string, playlists: SavedPlaylist[], ignoreId?: string): string {
+  const safeBase = sanitizePlaylistName(baseName, "Play List");
+  const usedNames = new Set(
+    playlists
+      .filter((playlist) => playlist.id !== ignoreId)
+      .map((playlist) => playlist.name.trim().toLowerCase())
+  );
+  if (!usedNames.has(safeBase.toLowerCase())) return safeBase;
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${safeBase} ${index}`;
+    if (!usedNames.has(candidate.toLowerCase())) return candidate;
+  }
+  return `${safeBase} ${Date.now().toString(36)}`;
+}
+
 function buildPlaylistFromTracks(tracks: BgmTrack[], currentPlaylist: PlaylistItem[]): PlaylistItem[] {
   const currentByTrackId = new Map(currentPlaylist.map((item) => [item.trackId, item]));
   return tracks.map((track, index) => currentByTrackId.get(track.id) ?? makePlaylistItem(track.id, index));
@@ -9323,6 +9766,17 @@ function normalizeSourceHiddenTrackIds(value: unknown, trackIds: Set<string>): s
   return Array.from(new Set(value.filter((id): id is string => typeof id === "string" && trackIds.has(id))));
 }
 
+function getNextSelectedTrackIdAfterRemoval(
+  currentId: string | null,
+  removedIds: Set<string>,
+  playlistTrackIds: string[],
+  bgmTracks: BgmTrack[]
+): string | null {
+  if (!currentId || !removedIds.has(currentId)) return currentId;
+  const availableIds = new Set(bgmTracks.map((track) => track.id).filter((id) => !removedIds.has(id)));
+  return playlistTrackIds.find((id) => availableIds.has(id)) ?? bgmTracks.find((track) => availableIds.has(track.id))?.id ?? null;
+}
+
 function normalizePlaylistRule(value: unknown, fallback: PlaylistRule): PlaylistRule {
   if (!value || typeof value !== "object") return clonePlaylistRule(fallback);
   const mode = (value as { mode?: unknown }).mode;
@@ -9479,22 +9933,11 @@ function getStoredDurationMs(rule: PlaylistRule, fallbackMs = defaultPlaylistDur
   return Math.round(clampNumber(rule.durationMs, 1000, 60 * 60 * 1000, fallbackMs));
 }
 
-type PlayTimeMinimumReason = "fade" | "loop-marker";
-
 function getMinimumPlayTimeSeconds(track: BgmTrack, rule: PlaylistRule): number {
   return Math.max(1, Math.round(getPlaylistMinimumDurationMs(track, rule) / 1000));
 }
 
-function getPlayTimeMinimumReason(track: BgmTrack, rule: PlaylistRule): PlayTimeMinimumReason {
-  return track.loop && rule.mode === "duration" && sampleToMs(track.loop.startSample, track.sampleRate) > 0 ? "loop-marker" : "fade";
-}
-
-function formatPlayTimeMinimumStatus(minimumSeconds: number, language: UiLanguage = "en", reason: PlayTimeMinimumReason = "fade"): string {
-  if (reason === "loop-marker") {
-    return language === "ja"
-      ? `Play時間はループ開始位置＋フェードアウトより長く設定してください（最小: ${minimumSeconds}秒）`
-      : `Set Play time longer than loop start plus Fade Out. Minimum: ${minimumSeconds}s.`;
-  }
+function formatPlayTimeMinimumStatus(minimumSeconds: number, language: UiLanguage = "en"): string {
   return language === "ja"
     ? `Play時間はフェードアウトより長く設定してください（最小: ${minimumSeconds}秒）`
     : `Set Play time longer than Fade Out. Minimum: ${minimumSeconds}s.`;
@@ -9598,8 +10041,31 @@ function makeVisualVars(brightness: number, maxBrightness = baseGamingnessMax): 
   const oldEdgeRamp = Math.max(0, (Math.min(1, normalized) - 0.68) / 0.32);
   const extraEdgeRamp = Math.max(0, (normalized - 1) / 0.5);
   const gamingnessGlare = Math.min(3.4, Math.max(0, (visualValue - 70) / 30));
-  const playheadGlowAlpha = clampUnit(0.08 + Math.min(1.45, normalized) * 0.18 + gamingnessGlare * 0.08);
-  const playheadGlowSpread = 4 + Math.min(1.5, normalized) * 10 + gamingnessGlare * 6;
+  const legacyPlayheadCapVisualValue = 70 + 30 * 3.4;
+  const legacyPlayheadCapValue = baseGamingnessMax + Math.pow(10, (legacyPlayheadCapVisualValue - baseGamingnessMax) / 52) - 1;
+  const extendedPlayheadProgress = clampUnit((value - legacyPlayheadCapValue) / legacyPlayheadCapValue);
+  const extendedPlayheadMultiplier = 1 + extendedPlayheadProgress;
+  const extendedPlayheadCapValue = legacyPlayheadCapValue * 2;
+  const gamingnessEffectStrength = getGamingnessEffectStrength(value);
+  const playheadGlowScale = clampUnit(value / baseGamingnessMax);
+  const playheadIntensity = Math.min(2.6, Math.max(0, normalized + gamingnessGlare * 0.42));
+  const legacyPlayheadGlowAlpha = clampUnit(0.12 + Math.min(1.7, normalized) * 0.24 + gamingnessGlare * 0.13);
+  const legacyPlayheadAuraAlpha = clampUnit(0.1 + playheadIntensity * 0.18 + gamingnessGlare * 0.1);
+  const legacyPlayheadGlowSpread = 5 + Math.min(1.8, normalized) * 13 + gamingnessGlare * 8;
+  const legacyPlayheadAuraWidth = 5 + playheadIntensity * 5.8 + gamingnessGlare * 3.4;
+  const legacyPlayheadAuraBlur = 1.2 + playheadIntensity * 1.4 + gamingnessGlare * 1.05;
+  const playheadGlowAlpha = clampUnit((legacyPlayheadGlowAlpha + (1 - legacyPlayheadGlowAlpha) * extendedPlayheadProgress) * playheadGlowScale);
+  const playheadAuraAlpha = clampUnit((legacyPlayheadAuraAlpha + (1 - legacyPlayheadAuraAlpha) * extendedPlayheadProgress) * playheadGlowScale);
+  const playheadGlowSpread = legacyPlayheadGlowSpread * extendedPlayheadMultiplier;
+  const playheadAuraWidth = legacyPlayheadAuraWidth * extendedPlayheadMultiplier;
+  const playheadAuraBlur = legacyPlayheadAuraBlur * extendedPlayheadMultiplier;
+  const playheadCoreWidth = 2.35 + Math.min(2.1, playheadIntensity) * 0.68;
+  const playheadAxisAlpha = clampUnit(0.72 + Math.min(1.8, playheadIntensity) * 0.1);
+  const playheadAxisWidth = 0.85 + Math.min(2, playheadIntensity) * 0.18;
+  const waveformBreatheMaxAlpha = 0.58;
+  const waveformBreatheMaxGlow = 42;
+  const waveformBreatheAlpha = waveformBreatheMaxAlpha * gamingnessEffectStrength;
+  const waveformBreatheGlow = waveformBreatheMaxGlow * gamingnessEffectStrength;
   return {
     "--accent-saturation": `${28 + normalized * 72}%`,
     "--accent-light": `${66 + normalized * 14}%`,
@@ -9615,8 +10081,23 @@ function makeVisualVars(brightness: number, maxBrightness = baseGamingnessMax): 
     "--gamingness-glare": `${gamingnessGlare}`,
     "--playhead-glow-alpha": `${playheadGlowAlpha}`,
     "--playhead-glow-spread": `${playheadGlowSpread}px`,
+    "--playhead-aura-alpha": `${playheadAuraAlpha}`,
+    "--playhead-aura-width": `${playheadAuraWidth}px`,
+    "--playhead-aura-blur": `${playheadAuraBlur}px`,
+    "--playhead-core-width": `${playheadCoreWidth}px`,
+    "--playhead-axis-alpha": `${playheadAxisAlpha}`,
+    "--playhead-axis-width": `${playheadAxisWidth}px`,
+    "--waveform-breathe-alpha": `${waveformBreatheAlpha}`,
+    "--waveform-breathe-glow": `${waveformBreatheGlow}px`,
+    "--waveform-breathe-state": gamingnessEffectStrength > 0 ? "running" : "paused",
     "--ui-contrast": `${0.82 + Math.min(1, normalized) * 0.18}`
   } as CSSProperties;
+}
+
+function getGamingnessEffectStrength(value: number): number {
+  if (value < baseGamingnessMax) return 0;
+  const progress = clampUnit((value - baseGamingnessMax) / (gamingnessEffectMaxValue - baseGamingnessMax));
+  return 0.1 + progress * 0.9;
 }
 
 function clampUnit(value: number): number {

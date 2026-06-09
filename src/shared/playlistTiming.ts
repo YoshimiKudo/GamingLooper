@@ -18,8 +18,7 @@ export function getPlaylistPlayMs(track: BgmTrack, rule: PlaylistRule): number {
 
 export function getPlaylistMinimumDurationMs(track: BgmTrack, rule: PlaylistRule): number {
   if (!track.loop || rule.mode === "straight") return 1000;
-  const loopStartMs = sampleToMs(track.loop.startSample, track.sampleRate);
-  const boundaryMs = loopStartMs + getRuleFadeMs(rule);
+  const boundaryMs = getRuleFadeMs(rule);
   return Math.max(1000, (Math.floor(boundaryMs / 1000) + 1) * 1000);
 }
 

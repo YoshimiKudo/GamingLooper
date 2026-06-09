@@ -1,6 +1,6 @@
 import type { BgmTrack, LoopMarker, SeFile, UiLanguage } from "../../shared/types.js";
 import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactElement } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
 import { formatTime, msToSample, sampleToMs } from "../../shared/format.js";
 import type { PositionStore } from "../positionStore.js";
 import { applyWaveformPlayheadPosition, getWaveformPlayheadX } from "../waveformPlayhead.js";
@@ -25,10 +25,13 @@ interface Props {
   isScanning?: boolean;
   isDeepScanning?: boolean;
   hideEmptyLabel?: boolean;
+  showLoopUnitToggle?: boolean;
+  footerActions?: ReactNode;
 }
 
 type WaveformTrack = BgmTrack | SeFile;
 type TimeTick = { ms: number; x: number; label: string };
+type LoopInputUnit = "time" | "sample";
 interface WaveformLabels {
   emptyBgm: string;
   lastSe: string;
@@ -40,6 +43,9 @@ interface WaveformLabels {
   waveform: string;
   scanning: string;
   deepScanning: string;
+  unitTime: string;
+  unitSample: string;
+  loopInputUnit: string;
 }
 
 const waveformPlayheadEnabled = !new URLSearchParams(window.location.search).has("playhead") || new URLSearchParams(window.location.search).get("playhead") !== "0";
@@ -65,15 +71,19 @@ export const WaveformView = memo(function WaveformView({
   language = "en",
   isScanning = false,
   isDeepScanning = false,
-  hideEmptyLabel = false
+  hideEmptyLabel = false,
+  showLoopUnitToggle = false,
+  footerActions
 }: Props): ReactElement {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const activeDragRef = useRef<{ marker: "start" | "end"; pointerId: number } | null>(null);
   const id = useId().replace(/:/g, "");
   const waveGradientId = `waveFade-${id}`;
+  const waveColorGradientId = `waveColor-${id}`;
   const scanGradientId = `waveScan-${id}`;
   const deepBackgroundGradientId = `deepBg-${id}`;
   const [draggingMarker, setDraggingMarker] = useState<"start" | "end" | null>(null);
+  const [loopInputUnit, setLoopInputUnit] = useState<LoopInputUnit>("time");
   const panelClassName = `panel waveform-panel ${compact ? "compact-waveform" : ""}`;
   const labels = useMemo(() => getWaveformLabels(language), [language]);
   const waveformPath = useMemo(
@@ -187,7 +197,7 @@ export const WaveformView = memo(function WaveformView({
           <div className="confidence-pill warning">{labels.noLoop}</div>
         ) : null}
       </div>
-      <div className={`waveform-canvas ${draggingMarker ? "dragging-marker" : ""}`}>
+      <div className={`waveform-canvas ${onSeek ? "seek-enabled" : ""} ${draggingMarker ? "dragging-marker" : ""}`}>
         <svg
           ref={svgRef}
           viewBox="0 0 1200 220"
@@ -204,6 +214,7 @@ export const WaveformView = memo(function WaveformView({
             waveformPath={waveformPath}
             tickMarks={tickMarks}
             waveGradientId={waveGradientId}
+            waveColorGradientId={waveColorGradientId}
             scanGradientId={scanGradientId}
             deepBackgroundGradientId={deepBackgroundGradientId}
             loop={loop}
@@ -213,6 +224,7 @@ export const WaveformView = memo(function WaveformView({
             canDragMarkers={canDragMarkers}
             isScanning={isScanning}
             isDeepScanning={isDeepScanning}
+            waveformGlowActive={showPlayhead}
             draggingMarker={draggingMarker}
             labels={labels}
             onMarkerPointerDown={beginMarkerDrag}
@@ -225,26 +237,63 @@ export const WaveformView = memo(function WaveformView({
       </div>
       {editable && isBgmTrack(track) ? (
         <div className="loop-editor-row">
-          <label>
-            {labels.start}
-            <input
-              type="number"
-              min="0"
-              step="0.001"
-              value={(startMs / 1000).toFixed(3)}
-              onChange={(event) => updateLoop(track, Number(event.target.value) * 1000, endMs, onLoopChange)}
-            />
-          </label>
-          <label>
-            {labels.end}
-            <input
-              type="number"
-              min="0"
-              step="0.001"
-              value={(endMs / 1000).toFixed(3)}
-              onChange={(event) => updateLoop(track, startMs, Number(event.target.value) * 1000, onLoopChange)}
-            />
-          </label>
+          <div className="loop-editor-fields">
+            <label>
+              {labels.start}
+              <input
+                type="number"
+                min="0"
+                step={loopInputUnit === "sample" ? "1" : "0.001"}
+                value={loopInputUnit === "sample" ? String(track.loop?.startSample ?? 0) : (startMs / 1000).toFixed(3)}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (loopInputUnit === "sample") {
+                    updateLoopSamples(track, value, track.loop?.endSample ?? msToSample(endMs, track.sampleRate), onLoopChange);
+                    return;
+                  }
+                  updateLoop(track, value * 1000, endMs, onLoopChange);
+                }}
+              />
+            </label>
+            <label>
+              {labels.end}
+              <input
+                type="number"
+                min="0"
+                step={loopInputUnit === "sample" ? "1" : "0.001"}
+                value={loopInputUnit === "sample" ? String(track.loop?.endSample ?? track.durationSamples) : (endMs / 1000).toFixed(3)}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (loopInputUnit === "sample") {
+                    updateLoopSamples(track, track.loop?.startSample ?? msToSample(startMs, track.sampleRate), value, onLoopChange);
+                    return;
+                  }
+                  updateLoop(track, startMs, value * 1000, onLoopChange);
+                }}
+              />
+            </label>
+          </div>
+          {showLoopUnitToggle ? (
+            <div className="loop-unit-toggle" role="group" aria-label={labels.loopInputUnit}>
+              <button
+                type="button"
+                className={loopInputUnit === "time" ? "active" : ""}
+                aria-pressed={loopInputUnit === "time"}
+                onClick={() => setLoopInputUnit("time")}
+              >
+                {labels.unitTime}
+              </button>
+              <button
+                type="button"
+                className={loopInputUnit === "sample" ? "active" : ""}
+                aria-pressed={loopInputUnit === "sample"}
+                onClick={() => setLoopInputUnit("sample")}
+              >
+                {labels.unitSample}
+              </button>
+            </div>
+          ) : null}
+          {footerActions ? <div className="loop-editor-actions">{footerActions}</div> : null}
         </div>
   ) : null}
     </section>
@@ -266,6 +315,8 @@ function areWaveformViewPropsEqual(previous: Props, next: Props): boolean {
     previous.isScanning === next.isScanning &&
     previous.isDeepScanning === next.isDeepScanning &&
     previous.hideEmptyLabel === next.hideEmptyLabel &&
+    previous.showLoopUnitToggle === next.showLoopUnitToggle &&
+    previous.footerActions === next.footerActions &&
     Boolean(previous.onLoopChange) === Boolean(next.onLoopChange) &&
     previous.onSeek === next.onSeek &&
     Boolean(previous.onVolumeChange) === Boolean(next.onVolumeChange)
@@ -314,6 +365,7 @@ interface WaveformArtworkProps {
   waveformPath: string;
   tickMarks: TimeTick[];
   waveGradientId: string;
+  waveColorGradientId: string;
   scanGradientId: string;
   deepBackgroundGradientId: string;
   loop: LoopMarker | null;
@@ -323,6 +375,7 @@ interface WaveformArtworkProps {
   canDragMarkers: boolean;
   isScanning: boolean;
   isDeepScanning: boolean;
+  waveformGlowActive: boolean;
   draggingMarker: "start" | "end" | null;
   labels: WaveformLabels;
   onMarkerPointerDown: (marker: "start" | "end", event: ReactPointerEvent<SVGGElement>) => void;
@@ -338,26 +391,44 @@ function WaveformPlayhead({
   positionStore?: PositionStore;
 }): ReactElement {
   const lineRef = useRef<SVGLineElement | null>(null);
+  const auraRef = useRef<SVGLineElement | null>(null);
+  const outerAuraRef = useRef<SVGLineElement | null>(null);
+  const axisRef = useRef<SVGLineElement | null>(null);
 
   useEffect(() => {
     if (!positionStore) return undefined;
     const update = () => {
       const node = lineRef.current;
-      if (!node) return;
-      applyWaveformPlayheadPosition(node, positionStore.getSnapshot(), durationMs);
+      const aura = auraRef.current;
+      const outerAura = outerAuraRef.current;
+      const axis = axisRef.current;
+      if (!node || !aura || !outerAura || !axis) return;
+      const current = positionStore.getSnapshot();
+      applyWaveformPlayheadPosition(outerAura, current, durationMs);
+      applyWaveformPlayheadPosition(aura, current, durationMs);
+      applyWaveformPlayheadPosition(node, current, durationMs);
+      applyWaveformPlayheadPosition(axis, current, durationMs);
     };
     update();
     return positionStore.subscribe(update);
   }, [durationMs, positionStore]);
 
   const x = String(getWaveformPlayheadX(positionStore?.getSnapshot() ?? currentMs, durationMs));
-  return <line ref={lineRef} className="playhead" x1={x} x2={x} y1="34" y2="198" />;
+  return (
+    <g className="playhead-stack">
+      <line ref={outerAuraRef} className="playhead-aura playhead-aura-outer" x1={x} x2={x} y1="34" y2="198" />
+      <line ref={auraRef} className="playhead-aura playhead-aura-inner" x1={x} x2={x} y1="34" y2="198" />
+      <line ref={lineRef} className="playhead" x1={x} x2={x} y1="34" y2="198" />
+      <line ref={axisRef} className="playhead-axis" x1={x} x2={x} y1="34" y2="198" />
+    </g>
+  );
 }
 
 const WaveformArtwork = memo(function WaveformArtwork({
   waveformPath,
   tickMarks,
   waveGradientId,
+  waveColorGradientId,
   scanGradientId,
   deepBackgroundGradientId,
   loop,
@@ -367,6 +438,7 @@ const WaveformArtwork = memo(function WaveformArtwork({
   canDragMarkers,
   isScanning,
   isDeepScanning,
+  waveformGlowActive,
   labels,
   onMarkerPointerDown
 }: WaveformArtworkProps): ReactElement {
@@ -377,6 +449,14 @@ const WaveformArtwork = memo(function WaveformArtwork({
           <stop offset="0%" stopColor="#d7c4ae" stopOpacity="0.82" />
           <stop offset="55%" stopColor="#f2ddc3" stopOpacity="0.92" />
           <stop offset="100%" stopColor="#bda58d" stopOpacity="0.72" />
+        </linearGradient>
+        <linearGradient id={waveColorGradientId} x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0%" stopColor="#ff5b5b" stopOpacity="0.78" />
+          <stop offset="20%" stopColor="#ffea5c" stopOpacity="0.7" />
+          <stop offset="42%" stopColor="#8fff64" stopOpacity="0.74" />
+          <stop offset="64%" stopColor="#62fff3" stopOpacity="0.82" />
+          <stop offset="82%" stopColor="#73bdff" stopOpacity="0.72" />
+          <stop offset="100%" stopColor="#eb6dff" stopOpacity="0.78" />
         </linearGradient>
         <linearGradient id={scanGradientId} x1="0" x2="1" y1="0" y2="0">
           <stop offset="0%" stopColor="#2bd7e9" stopOpacity="0" />
@@ -407,7 +487,9 @@ const WaveformArtwork = memo(function WaveformArtwork({
           <line className="wave-grid" x1={tick.x} x2={tick.x} y1="22" y2="204" />
         </g>
       ))}
-      <path className="wave-path" d={waveformPath} style={{ fill: `url(#${waveGradientId})` }} />
+      <path className={`wave-path-glow ${waveformGlowActive ? "active" : ""}`} d={waveformPath} style={{ fill: `url(#${waveGradientId})` }} />
+      <path className={`wave-path ${waveformGlowActive ? "active" : ""}`} d={waveformPath} style={{ fill: `url(#${waveGradientId})` }} />
+      <path className={`wave-path-color ${waveformGlowActive ? "active" : ""}`} d={waveformPath} style={{ fill: `url(#${waveColorGradientId})` }} />
       {loop ? (
         <>
           <Marker
@@ -486,7 +568,10 @@ function getWaveformLabels(language: UiLanguage): WaveformLabels {
       end: "終了",
       waveform: "波形",
       scanning: "Scanning...",
-      deepScanning: "Deep Scanning..."
+      deepScanning: "Deep Scanning...",
+      unitTime: "時間",
+      unitSample: "サンプル",
+      loopInputUnit: "ループ入力単位"
     };
   }
   return {
@@ -499,7 +584,10 @@ function getWaveformLabels(language: UiLanguage): WaveformLabels {
     end: "End",
     waveform: "waveform",
     scanning: "Scanning...",
-    deepScanning: "Deep Scanning..."
+    deepScanning: "Deep Scanning...",
+    unitTime: "Time",
+    unitSample: "Sample",
+    loopInputUnit: "Loop input unit"
   };
 }
 
@@ -626,6 +714,29 @@ function updateLoop(
       startSample,
       endSample,
       lengthSamples: endSample - startSample,
+      confidence: null,
+      source: "manual"
+    },
+    options
+  );
+}
+
+function updateLoopSamples(
+  track: BgmTrack,
+  startSample: number,
+  endSample: number,
+  onLoopChange: Props["onLoopChange"],
+  options: { history?: boolean } = {}
+): void {
+  if (!Number.isFinite(startSample) || !Number.isFinite(endSample)) return;
+  const durationSamples = Math.max(1, track.durationSamples);
+  const safeStartSample = Math.min(Math.max(0, Math.round(startSample)), durationSamples - 1);
+  const safeEndSample = Math.min(durationSamples, Math.max(safeStartSample + 1, Math.round(endSample)));
+  onLoopChange?.(
+    {
+      startSample: safeStartSample,
+      endSample: safeEndSample,
+      lengthSamples: safeEndSample - safeStartSample,
       confidence: null,
       source: "manual"
     },
