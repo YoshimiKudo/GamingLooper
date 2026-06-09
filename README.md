@@ -2,11 +2,18 @@
 
 GamingLooper is a desktop game-audio loop, playlist, and SE audition tool based on AutoLooper's loop-detection approach.
 
+## LATEST PUBLIC BETA
+
+- Latest release: [GamingLooper v0.1.0 beta 1](https://github.com/YoshimiKudo/GamingLooper/releases/tag/v0.1.0-beta.1)
+- Windows x64 download: [GamingLooper-0.1.0-beta.1-win-x64.zip](https://github.com/YoshimiKudo/GamingLooper/releases/download/v0.1.0-beta.1/GamingLooper-0.1.0-beta.1-win-x64.zip)
+
+This is an unsigned Windows beta release. Windows may show a SmartScreen or security warning on first launch.
+
 The app keeps loop markers, playlist rules, SE assignments, mix settings, and visual settings in a local project file. It does not write loop metadata into audio files.
 
 ## PUBLIC RELEASE STATUS
 
-GamingLooper is preparing for an open public GitHub release. The source code is licensed under the MIT License. Bundled starter SE files under `asset/se` use a separate asset license so they can be redistributed with GamingLooper, but not repackaged as a standalone sound-effect library.
+GamingLooper is available as a public beta on GitHub Releases. The source code is licensed under the MIT License. Bundled starter SE files under `asset/se` use a separate asset license so they can be redistributed with GamingLooper, but not repackaged as a standalone sound-effect library.
 
 The Windows app is currently distributed as an unsigned directory release. Windows may show a security warning when launching an unsigned executable.
 
