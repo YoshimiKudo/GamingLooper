@@ -77,6 +77,7 @@ import {
   defaultPlaylistLoopCount,
   defaultUi,
   defaultVisual,
+  isLegacyVgostDetectionSettings,
   makePlaylistItem,
   normalDetectionSettings,
   vgostDetectionSettings
@@ -86,6 +87,7 @@ import { compactFileName, createDefaultSeAssignments, cycleSeIconId, inferNewSeA
 import { AudioEngine } from "./audio/AudioEngine.js";
 import type { AudioDebugSnapshot, SePreloadProgress, SePreloadStatus } from "./audio/AudioEngine.js";
 import { detectTrackWithWebAudio } from "./audio/detectInRenderer.js";
+import { loadWaveformWithWebAudio } from "./audio/waveform.js";
 import { AnalyzerPanel } from "./components/AnalyzerPanel.js";
 import { SeIcon } from "./components/SeIcon.js";
 import { SePad } from "./components/SePad.js";
@@ -625,6 +627,11 @@ interface DetectionProgress {
   cancelRequested: boolean;
 }
 
+interface DetectionQueueItem {
+  trackIds: string[];
+  label: string;
+}
+
 interface GamingnessProgress {
   enabled: boolean;
   assetCount: number;
@@ -828,6 +835,9 @@ function App(): ReactElement {
   const lastPositionPublishAtRef = useRef(0);
   const lastSePositionPublishAtRef = useRef(0);
   const uiPerfRef = useRef<UiPerfMutableState | null>(null);
+  const detectionActiveRef = useRef(false);
+  const detectionProgressRef = useRef<DetectionProgress | null>(null);
+  const detectionQueueRef = useRef<DetectionQueueItem[]>([]);
   const [view, setView] = useState<ViewId>("loop");
   const [initialConfigSection, setInitialConfigSection] = useState<ConfigSectionId>("mix");
   const [project, setProject] = useState<GamingProject>(() => initialProject);
@@ -896,6 +906,10 @@ function App(): ReactElement {
   useEffect(() => {
     projectRef.current = project;
   }, [project]);
+
+  useEffect(() => {
+    detectionProgressRef.current = detectionProgress;
+  }, [detectionProgress]);
 
   useEffect(() => {
     const current = project.visual.loadExpOverflowCount;
@@ -2467,9 +2481,27 @@ function App(): ReactElement {
     });
     setStatus(errors.length > 0 ? errors[0] ?? "Imported with warnings." : `Imported ${tracks.length} BGM file(s).`);
     options.afterImport?.(nextTracks.length + restoredHiddenTrackIds.length);
-    if (!detectionSettings.autoDetectOnImport || nextTracks.length === 0) return nextTracks.length;
+    if (!detectionSettings.autoDetectOnImport || nextTracks.length === 0) {
+      void hydrateMissingWaveforms(nextTracks);
+      return nextTracks.length;
+    }
     await runDetection(nextTracks, "Auto Loop imported BGM");
     return nextTracks.length;
+  }
+
+  async function hydrateMissingWaveforms(tracks: BgmTrack[]): Promise<void> {
+    const targets = tracks.filter((track) => !track.waveform && usesRendererWaveformHydration(track.format));
+    for (const track of targets) {
+      try {
+        const waveform = await loadWaveformWithWebAudio(track);
+        setProjectState((draft) => ({
+          ...draft,
+          bgmTracks: draft.bgmTracks.map((item) => (item.id === track.id && !item.waveform ? { ...item, waveform } : item))
+        }), { history: false });
+      } catch {
+        // Import remains valid even if the browser decoder cannot build a preview waveform.
+      }
+    }
   }
 
   async function assignSeFromDialog(startKey: SeKey): Promise<void> {
@@ -3294,9 +3326,9 @@ function App(): ReactElement {
 
   async function autoLoopSourceTracks(trackIds: string[]): Promise<void> {
     const targetIdSet = new Set(trackIds);
-    const targets = projectRef.current.bgmTracks.filter((track) => targetIdSet.has(track.id) && !track.loop);
+    const targets = projectRef.current.bgmTracks.filter((track) => targetIdSet.has(track.id));
     if (targets.length === 0) {
-      setStatus(language === "ja" ? "Auto Loop対象のNon Looped曲がありません。" : "No non-looped source tracks selected.");
+      setStatus(language === "ja" ? "Auto Loop対象のBGM Source曲がありません。" : "No BGM Source tracks selected for Auto Loop.");
       return;
     }
     await runDetection(targets, "Auto Loop");
@@ -3335,16 +3367,68 @@ function App(): ReactElement {
               ...track,
               loop: result.loop,
               status: result.status,
-              validation: result.validation
+              validation: result.validation,
+              waveform: result.waveform ?? track.waveform,
+              sampleRate: result.sampleRate ?? track.sampleRate,
+              channels: result.channels ?? track.channels,
+              durationSamples: result.durationSamples ?? track.durationSamples,
+              durationMs: result.durationMs ?? track.durationMs
             }
           : track;
       })
     }), options);
   }
 
+  function queueDetectionTargets(targets: BgmTrack[], label: string): number {
+    const activeProgress = detectionProgressRef.current;
+    const activeIds = new Set(activeProgress ? [activeProgress.currentTrackId, ...activeProgress.pendingTrackIds] : []);
+    const queuedIds = new Set(detectionQueueRef.current.flatMap((item) => item.trackIds));
+    const trackIds = Array.from(new Set(targets.map((track) => track.id))).filter((id) => !activeIds.has(id) && !queuedIds.has(id));
+    if (trackIds.length === 0) {
+      return 0;
+    }
+    detectionQueueRef.current.push({ trackIds, label });
+    return trackIds.length;
+  }
+
   async function runDetection(targets: BgmTrack[], label: string): Promise<void> {
-    if (targets.length === 0 || detectionProgress) return;
-    const uniqueTargets = Array.from(new Map(targets.map((track) => [track.id, track])).values());
+    const trackIds = Array.from(new Set(targets.map((track) => track.id)));
+    if (trackIds.length === 0) return;
+    if (detectionActiveRef.current) {
+      const queuedCount = queueDetectionTargets(targets, label);
+      if (queuedCount > 0) {
+        setStatus(
+          language === "ja"
+            ? `${label}を待機に追加: ${queuedCount}件`
+            : `${label} queued: ${queuedCount} file${queuedCount === 1 ? "" : "s"}`
+        );
+      }
+      return;
+    }
+
+    detectionActiveRef.current = true;
+    let request: DetectionQueueItem | null = { trackIds, label };
+    try {
+      while (request) {
+        const canceled = await runDetectionBatch(request);
+        if (canceled) {
+          detectionQueueRef.current = [];
+          break;
+        }
+        request = detectionQueueRef.current.shift() ?? null;
+      }
+    } finally {
+      detectionActiveRef.current = false;
+    }
+  }
+
+  async function runDetectionBatch(request: DetectionQueueItem): Promise<boolean> {
+    const targetIdSet = new Set(request.trackIds);
+    const uniqueTargets = projectRef.current.bgmTracks.filter((track) => targetIdSet.has(track.id));
+    const label = request.label;
+    if (uniqueTargets.length === 0) {
+      return false;
+    }
     const total = uniqueTargets.length;
     const startedAtMs = Date.now();
     const historySnapshot = cloneProjectSnapshot(projectRef.current);
@@ -3418,6 +3502,7 @@ function App(): ReactElement {
             ? `${label}完了: ${results.length}/${total}件処理`
             : `${label} complete: ${results.length}/${total} processed`
       );
+      return canceled;
     } finally {
       setDetectionProgress(null);
       scanCancelRequestedRef.current = false;
@@ -5701,11 +5786,9 @@ function LoopPlaylistView({
     [scanWaitingTrackIds, scanningTrackId, visibleSourceTracks]
   );
   const selectedSourceTracks = visibleSourceTracks.filter((track) => selectedSourceTrackIds.has(track.id) && draggableSourceTrackIdSet.has(track.id));
-  const selectedSourceAutoLoopTargets = selectedSourceTracks.filter((track) => !track.loop);
   const canAutoLoopSelectedSource =
     !detectionProgress &&
-    selectedSourceTracks.length > 0 &&
-    selectedSourceAutoLoopTargets.length === selectedSourceTracks.length;
+    selectedSourceTracks.length > 0;
   const sourceTracksForAdd =
     selectedSourceTracks.length > 0
       ? selectedSourceTracks
@@ -7002,7 +7085,7 @@ function LoopPlaylistView({
               className="thin-button source-auto-loop-button"
               type="button"
               disabled={!canAutoLoopSelectedSource}
-              onClick={() => onAutoLoopSourceTracks(selectedSourceAutoLoopTargets.map((track) => track.id))}
+              onClick={() => onAutoLoopSourceTracks(selectedSourceTracks.map((track) => track.id))}
             >
               {t("autoLoop")}
             </button>
@@ -8396,7 +8479,7 @@ function AutoLoopSettingsPanel({ settings, t, onChange }: { settings: DetectionS
       <div className="preset-row">
         <span>{t("preset")}</span>
         <label className="segmented preset-segmented">
-          <button className={presetLabel === "VGOST" ? "active" : ""} type="button" onClick={() => applyPreset("vgost")}>
+          <button className={presetLabel === "VGTDEEP" ? "active" : ""} type="button" onClick={() => applyPreset("vgost")}>
             {t("vgost")}
           </button>
           <button className={presetLabel === "Normal" ? "active" : ""} type="button" onClick={() => applyPreset("normal")}>
@@ -8421,7 +8504,7 @@ function AutoLoopSettingsPanel({ settings, t, onChange }: { settings: DetectionS
         <span>{t("runOnImport")}</span>
         <input type="checkbox" checked={settings.autoDetectOnImport} onChange={(event) => patch({ autoDetectOnImport: event.target.checked })} />
       </label>
-      <NumberSetting label={t("matchWindow")} value={settings.matchWindowMs} min={100} max={10000} step={100} suffix="ms" onChange={(value) => patch({ matchWindowMs: value })} />
+      <NumberSetting label={t("matchWindow")} value={settings.matchWindowMs} min={100} max={30000} step={100} suffix="ms" onChange={(value) => patch({ matchWindowMs: value })} />
       <NumberSetting label={t("requiredMatch")} value={settings.matchThreshold} min={1} max={100} step={1} suffix="%" onChange={(value) => patch({ matchThreshold: value })} />
       <NumberSetting label={t("minimumLoop")} value={settings.minimumLoopMs} min={100} max={60000} step={100} suffix="ms" onChange={(value) => patch({ minimumLoopMs: value })} />
       <NumberSetting label={t("loopCheckPreroll")} value={settings.loopCheckPrerollMs} min={0} max={30000} step={100} suffix="ms" onChange={(value) => patch({ loopCheckPrerollMs: value })} />
@@ -8456,7 +8539,7 @@ function NumberSetting({
 }
 
 function getDetectionPresetLabel(settings: DetectionSettings): string {
-  if (matchesDetectionPreset(settings, autoLoopPresets.vgost)) return "VGOST";
+  if (matchesDetectionPreset(settings, autoLoopPresets.vgost)) return "VGTDEEP";
   if (matchesDetectionPreset(settings, autoLoopPresets.normal)) return "Normal";
   if (matchesDetectionPreset(settings, autoLoopPresets.deep)) return "Deep";
   return `Custom ${settings.mode === "deep" ? "Deep" : "Normal"}`;
@@ -9052,16 +9135,24 @@ function getActiveSeKeys(values: string[]): Set<SeKey> {
   return new Set(keys);
 }
 
+function usesRendererWaveformHydration(format: BgmTrack["format"]): boolean {
+  return format === "mp3" || format === "ogg" || format === "flac" || format === "opus";
+}
+
 function sanitizeDetectionSettings(settings: Partial<DetectionSettings> | undefined): DetectionSettings {
   const mode = settings?.mode === "deep" ? "deep" : "normal";
-  return {
+  const sanitized: DetectionSettings = {
     mode,
-    matchWindowMs: clampNumber(settings?.matchWindowMs, 100, 10000, defaultDetectionSettings.matchWindowMs),
+    matchWindowMs: clampNumber(settings?.matchWindowMs, 100, 30000, defaultDetectionSettings.matchWindowMs),
     matchThreshold: clampNumber(settings?.matchThreshold, 1, 100, defaultDetectionSettings.matchThreshold),
     minimumLoopMs: clampNumber(settings?.minimumLoopMs, 100, 60000, defaultDetectionSettings.minimumLoopMs),
     loopCheckPrerollMs: clampNumber(settings?.loopCheckPrerollMs, 0, 30000, defaultDetectionSettings.loopCheckPrerollMs),
     autoDetectOnImport: settings?.autoDetectOnImport ?? defaultDetectionSettings.autoDetectOnImport
   };
+  if (isLegacyVgostDetectionSettings(sanitized)) {
+    return { ...vgostDetectionSettings, autoDetectOnImport: sanitized.autoDetectOnImport };
+  }
+  return sanitized;
 }
 
 function sanitizeMixSettings(settings: Partial<GamingProject["mix"]> | undefined): GamingProject["mix"] {

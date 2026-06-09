@@ -27,8 +27,8 @@ describe("Auto Loop preset descriptions", () => {
     expect(appSource).toContain('return "customPresetDescription";');
     expect(i18nSource).toContain('presetDesignIntent: "Design intent"');
     expect(i18nSource).toContain('presetDesignIntent: "設計志向"');
-    expect(i18nSource).toContain("Recommended for video game soundtracks");
-    expect(i18nSource).toContain("ゲームOST向けの標準推奨");
+    expect(i18nSource).toContain("VGTDEEP for video game soundtracks");
+    expect(i18nSource).toContain("ゲームOST向けのVGTDEEP");
     expect(i18nSource).toContain("Your current manual detection values");
     expect(i18nSource).toContain("現在の手動調整値");
   });

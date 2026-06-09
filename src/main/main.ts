@@ -4,13 +4,15 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { BgmTrack, DetectionSettings, FileRef, GamingProject, HashCheck, SeFile, SequenceFile, SeSetFile, UiLanguage } from "../shared/types.js";
-import { defaultDetectionSettings } from "../shared/project.js";
+import { defaultDetectionSettings, isLegacyVgostDetectionSettings, vgostDetectionSettings } from "../shared/project.js";
 import { detectTrackLoop } from "./services/detect.js";
 import { hashFile, importBgmFiles, importSeFiles } from "./services/audioImport.js";
 import { clearProjectStoreLocation, getProjectStorePath, loadProject, saveProject, saveProjectAs } from "./services/projectStore.js";
 import { readLimitedAudioFile } from "./services/limits.js";
 import { getDefaultSaveFolderPath } from "./services/portablePaths.js";
 import { createBundledStarterProject } from "./services/starterProject.js";
+
+preventBrokenPipeCrash();
 
 const isDev = !app.isPackaged;
 const devServerUrl = "http://127.0.0.1:5173";
@@ -48,7 +50,6 @@ app.on("second-instance", () => {
   mainWindow.moveTop();
 });
 
-preventBrokenPipeCrash();
 app.commandLine.appendSwitch("disable-background-timer-throttling");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
@@ -90,13 +91,23 @@ function preventBrokenPipeCrash(): void {
   };
 
   for (const stream of [process.stdout, process.stderr]) {
-    stream.on("error", (error) => {
+    const originalWrite = stream.write.bind(stream) as (...args: unknown[]) => boolean;
+    stream.write = ((...args: unknown[]) => {
+      try {
+        return originalWrite(...args);
+      } catch (error) {
+        if (isBrokenPipe(error)) return false;
+        throw error;
+      }
+    }) as NodeJS.WritableStream["write"];
+
+    stream.prependListener("error", (error) => {
       if (isBrokenPipe(error)) return;
-      // Avoid logging from this handler because the console stream itself may be the failing target.
+      throw error;
     });
   }
 
-  for (const method of ["log", "warn", "error"] as const) {
+  for (const method of ["log", "info", "warn", "error", "debug"] as const) {
     const original = console[method].bind(console);
     console[method] = (...args: unknown[]) => {
       try {
@@ -108,7 +119,7 @@ function preventBrokenPipeCrash(): void {
     };
   }
 
-  process.on("uncaughtException", (error) => {
+  process.prependListener("uncaughtException", (error) => {
     if (isBrokenPipe(error)) return;
     throw error;
   });
@@ -1209,7 +1220,7 @@ function getTrackId(track: unknown): string {
 }
 
 function sanitizeDetectionSettings(settings: Partial<DetectionSettings> | undefined): DetectionSettings {
-  return {
+  const sanitized: DetectionSettings = {
     mode: settings?.mode === "deep" ? "deep" : "normal",
     matchWindowMs: clampNumber(settings?.matchWindowMs, 100, 30000, defaultDetectionSettings.matchWindowMs),
     matchThreshold: clampNumber(settings?.matchThreshold, 1, 100, defaultDetectionSettings.matchThreshold),
@@ -1217,6 +1228,10 @@ function sanitizeDetectionSettings(settings: Partial<DetectionSettings> | undefi
     loopCheckPrerollMs: clampNumber(settings?.loopCheckPrerollMs, 0, 30000, defaultDetectionSettings.loopCheckPrerollMs),
     autoDetectOnImport: settings?.autoDetectOnImport ?? defaultDetectionSettings.autoDetectOnImport
   };
+  if (isLegacyVgostDetectionSettings(sanitized)) {
+    return { ...vgostDetectionSettings, autoDetectOnImport: sanitized.autoDetectOnImport };
+  }
+  return sanitized;
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {

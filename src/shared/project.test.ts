@@ -6,8 +6,12 @@ import {
   defaultPlaylistDurationMs,
   defaultPlaylistFadeOutMs,
   defaultPlaylistLoopCount,
+  isLegacyVgostDetectionSettings,
+  isVgostDetectionSettings,
+  legacyVgostDetectionSettings,
   makePlaylistItem,
   normalDetectionSettings,
+  previousVgostDetectionSettings,
   vgostDetectionSettings
 } from "./project.js";
 
@@ -15,13 +19,20 @@ describe("project defaults", () => {
   it("uses VGOST as the default Auto Loop preset", () => {
     expect(defaultDetectionSettings).toEqual(vgostDetectionSettings);
     expect(createEmptyProject().detection).toEqual({
-      mode: "normal",
-      matchWindowMs: 5000,
-      matchThreshold: 88,
-      minimumLoopMs: 10000,
+      mode: "deep",
+      matchWindowMs: 1500,
+      matchThreshold: 60,
+      minimumLoopMs: 30000,
       loopCheckPrerollMs: 1000,
       autoDetectOnImport: true
     });
+  });
+
+  it("recognizes current and legacy VGOST preset values", () => {
+    expect(isVgostDetectionSettings(vgostDetectionSettings)).toBe(true);
+    expect(isLegacyVgostDetectionSettings(legacyVgostDetectionSettings)).toBe(true);
+    expect(isLegacyVgostDetectionSettings(previousVgostDetectionSettings)).toBe(true);
+    expect(isLegacyVgostDetectionSettings(vgostDetectionSettings)).toBe(false);
   });
 
   it("keeps Normal and Deep presets on the original timing values", () => {

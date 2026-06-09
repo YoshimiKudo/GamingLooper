@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DetectionSettings } from "./types.js";
-import { findBestLoop, findBestLoopDeep, findBestLoopDeepResponsive, findBestLoopResponsive } from "./detectCore.js";
+import { findBestLoop, findBestLoopDeep, findBestLoopDeepResponsive, findBestLoopResponsive, findBestLoopVgost, findBestLoopVgostResponsive } from "./detectCore.js";
 
 const settings: DetectionSettings = {
   autoDetectOnImport: true,
@@ -32,6 +32,27 @@ describe("responsive loop detection", () => {
     const responsive = await findBestLoopDeepResponsive(mono, 1000, deepSettings, null, scheduler);
 
     expect(responsive).toEqual(sync);
+    expect(scheduler.yieldCount).toBeGreaterThan(0);
+  });
+
+  it("matches VGOST synchronous detection while yielding", async () => {
+    const mono = makeLoopedSignal(7200, 3072);
+    const scheduler = createAlwaysYieldScheduler();
+    const vgostSettings: DetectionSettings = {
+      autoDetectOnImport: true,
+      mode: "normal",
+      matchWindowMs: 8000,
+      matchThreshold: 78,
+      minimumLoopMs: 30000,
+      loopCheckPrerollMs: 1000
+    };
+
+    const sync = findBestLoopVgost(mono, 100, vgostSettings, null);
+    const responsive = await findBestLoopVgostResponsive(mono, 100, vgostSettings, null, scheduler);
+
+    expect(responsive).toEqual(sync);
+    expect(sync).not.toBeNull();
+    expect(sync?.confidence).toBeGreaterThanOrEqual(sync?.acceptanceThreshold ?? 0);
     expect(scheduler.yieldCount).toBeGreaterThan(0);
   });
 });

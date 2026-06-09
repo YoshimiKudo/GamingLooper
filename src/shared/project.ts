@@ -1,4 +1,4 @@
-import type { GamingProject, PlaylistItem } from "./types.js";
+import type { DetectionSettings, GamingProject, PlaylistItem } from "./types.js";
 import { createDefaultSeAssignments } from "./seIcons.js";
 
 export const defaultMix = {
@@ -34,10 +34,24 @@ export const normalDetectionSettings = {
   autoDetectOnImport: true
 };
 
-export const vgostDetectionSettings = {
+export const legacyVgostDetectionSettings = {
   ...normalDetectionSettings,
   matchWindowMs: 5000,
   minimumLoopMs: 10000
+};
+
+export const previousVgostDetectionSettings = {
+  ...normalDetectionSettings,
+  matchWindowMs: 8000,
+  matchThreshold: 78,
+  minimumLoopMs: 30000
+};
+
+export const vgostDetectionSettings = {
+  ...normalDetectionSettings,
+  mode: "deep" as const,
+  matchThreshold: 60,
+  minimumLoopMs: 30000
 };
 
 export const deepDetectionSettings = {
@@ -102,6 +116,24 @@ export function makePlaylistItem(trackId: string, _index: number): PlaylistItem 
     },
     note: ""
   };
+}
+
+export function isVgostDetectionSettings(settings: DetectionSettings): boolean {
+  return matchesDetectionSettings(settings, vgostDetectionSettings);
+}
+
+export function isLegacyVgostDetectionSettings(settings: DetectionSettings): boolean {
+  return matchesDetectionSettings(settings, legacyVgostDetectionSettings) || matchesDetectionSettings(settings, previousVgostDetectionSettings);
+}
+
+function matchesDetectionSettings(settings: DetectionSettings, preset: DetectionSettings): boolean {
+  return (
+    settings.mode === preset.mode &&
+    settings.matchWindowMs === preset.matchWindowMs &&
+    settings.matchThreshold === preset.matchThreshold &&
+    settings.minimumLoopMs === preset.minimumLoopMs &&
+    settings.loopCheckPrerollMs === preset.loopCheckPrerollMs
+  );
 }
 
 function cryptoLikeId(): string {

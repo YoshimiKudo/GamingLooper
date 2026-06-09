@@ -15,11 +15,24 @@ describe("BGM Source action buttons", () => {
     expect(i18nSource).toContain("Build Sequencerと保存済みListは変更されません。");
   });
 
-  it("enables Auto Loop only when every selected source card is non-looped", () => {
-    expect(appSource).toContain("const selectedSourceAutoLoopTargets = selectedSourceTracks.filter((track) => !track.loop);");
-    expect(appSource).toContain("selectedSourceAutoLoopTargets.length === selectedSourceTracks.length");
+  it("allows Auto Loop to rescan selected source cards even when they already have loop markers", () => {
+    expect(appSource).not.toContain("selectedSourceAutoLoopTargets");
+    expect(appSource).toContain("const canAutoLoopSelectedSource =");
+    expect(appSource).toContain("selectedSourceTracks.length > 0");
     expect(appSource).toContain("disabled={!canAutoLoopSelectedSource}");
-    expect(appSource).toContain('onAutoLoopSourceTracks(selectedSourceAutoLoopTargets.map((track) => track.id))');
+    expect(appSource).toContain('onAutoLoopSourceTracks(selectedSourceTracks.map((track) => track.id))');
+    expect(appSource).toContain("projectRef.current.bgmTracks.filter((track) => targetIdSet.has(track.id))");
+  });
+
+  it("queues import-time Auto Loop requests while another scan is already active", () => {
+    expect(appSource).toContain("interface DetectionQueueItem");
+    expect(appSource).toContain("const detectionActiveRef = useRef(false);");
+    expect(appSource).toContain("const detectionQueueRef = useRef<DetectionQueueItem[]>([]);");
+    expect(appSource).toContain("function queueDetectionTargets(targets: BgmTrack[], label: string): number");
+    expect(appSource).toContain("if (detectionActiveRef.current) {");
+    expect(appSource).toContain("detectionQueueRef.current.push({ trackIds, label });");
+    expect(appSource).toContain("request = detectionQueueRef.current.shift() ?? null;");
+    expect(appSource).toContain('await runDetection(nextTracks, "Auto Loop imported BGM");');
   });
 
   it("places Auto Loop directly before Source Clear in the source action row", () => {

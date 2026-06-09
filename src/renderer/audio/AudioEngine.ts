@@ -76,7 +76,7 @@ interface BgmLoopState {
   crossfadeSec: number;
 }
 
-const LOOP_CROSSFADE_SEC = 0.035;
+const LOOP_CROSSFADE_SEC = 0.008;
 const LOOP_SCHEDULE_LOOKAHEAD_SEC = 0.12;
 
 export class AudioEngine {

@@ -5,6 +5,12 @@ const audioSource = readFileSync(new URL("./audio/AudioEngine.ts", import.meta.u
 const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 
 describe("BGM fade stop handling", () => {
+  it("keeps loop playback crossfades short so loop checks stay close to marker timing", () => {
+    expect(audioSource).toContain("const LOOP_CROSSFADE_SEC = 0.008;");
+    expect(audioSource).toContain("fadeInSec: loopState.crossfadeSec / this.debugPlaybackRate");
+    expect(audioSource).toContain("fadeOutSec: loopState.crossfadeSec / this.debugPlaybackRate");
+  });
+
   it("keeps fading BGM sources tracked so the transport stop can interrupt the fade", () => {
     const stopBgmBody = audioSource.slice(audioSource.indexOf("  stopBgm("), audioSource.indexOf("  async playSe("));
     const fadeOutBgmBody = audioSource.slice(audioSource.indexOf("  fadeOutBgm("), audioSource.indexOf("  async playSe("));

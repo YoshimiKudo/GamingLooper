@@ -33,7 +33,7 @@ Avoid placing the directory release under write-protected locations such as `Pro
 
 ## WHAT GAMINGLOOPER IS FOR
 
-GamingLooper is for auditioning BGM and SE together, then editing soundtrack playback with the loop count and track time you want.
+GamingLooper is for auditioning BGM and SE together, then editing soundtrack playback with the loop count, track time, or straight one-shot playback you want.
 
 It has two main purposes.
 
@@ -54,7 +54,7 @@ This side of the app is for confirming how BGM and SE behave together while you 
 
 ### 2. Import game soundtracks and play them with custom loop or time rules
 
-Use Sequence Builder to load soundtrack files, choose only the songs you need, set their order, and decide how each song transitions to the next. Each song can use a loop count, a fixed play time, and a fade-out value.
+Use Sequence Builder to load soundtrack files, choose only the songs you need, set their order, and decide how each song transitions to the next. Each song can use a loop count, a fixed play time, straight source playback, and a fade-out value.
 
 ## HOW TO ASSIGN SE TO KEYS
 
@@ -103,9 +103,9 @@ An SE Set stores the assigned SE file references, Vol, Pan, icon, color, and voi
 
 ## HOW TO BUILD SEQUENCE
 
-Build a List that plays game soundtrack files with the loop count or play duration you choose.
+Build a List that plays game soundtrack files with the loop count, play duration, or straight source playback you choose.
 
-Use `Time` when you want to check a track briefly, or `Loop` when you want to hear it repeat. Arrange the order, adjust `Fade`, then save it so Main View can play that flow back.
+Use `Loop` when you want to hear loop markers repeat, `Time` when you want to play for a chosen number of seconds, or `Straight` when you want to ignore loop markers and play the source from start to end once. Arrange the order, adjust `Fade`, then save it so Main View can play that flow back.
 
 ```text
 BGM Source  --->  Build Sequencer  --->  Complete & Save Sequence  --->  Sequence List  --->  Main View Play List
@@ -132,6 +132,7 @@ Each song in Build Sequencer has playback rules:
 | --- | --- |
 | `Loop` | Play the song through its loop section for the selected loop count, then move to the next song. |
 | `Time` | Play the song for the selected number of seconds, then move to the next song. |
+| `Straight` | Ignore loop markers for that Sequence row and play the source from start to end once. |
 | `Fade` | Fade out for the selected seconds before the next song starts. |
 
 Use the BGM Monitor to check loop markers and playback if needed.
@@ -140,13 +141,13 @@ Use the BGM Monitor to check loop markers and playback if needed.
 
 When the order and rules are ready, press `Complete & Save Sequence`.
 
-Choose a file name in the save dialog. If the Sequence file is saved, it is mounted into `Sequence List` as a reusable List. If the save dialog is canceled, nothing is mounted. Main View can load the saved Sequence and play it back with the order, `Loop`, `Time`, and `Fade` you set.
+Choose a file name in the save dialog. If the Sequence file is saved, it is mounted into `Sequence List` as a reusable List. If the save dialog is canceled, nothing is mounted. Main View can load the saved Sequence and play it back with the order, `Loop`, `Time`, `Straight`, and `Fade` you set.
 
 ### 5. Load the List and play it in Main View
 
 Click a saved List in `Sequence List` to load it into Main View. The Main View Play List uses the saved order and transition rules.
 
-In short: import source tracks, send only the tracks you need into Build Sequencer, choose `Loop` or `Time` per track, adjust `Fade`, save with Complete & Save Sequence, then play the saved List from Main View.
+In short: import source tracks, send only the tracks you need into Build Sequencer, choose `Loop`, `Time`, or `Straight` per track, adjust `Fade`, save with Complete & Save Sequence, then play the saved List from Main View.
 
 ## Core Policy
 
@@ -164,10 +165,12 @@ In short: import source tracks, send only the tracks you need into Build Sequenc
 ## BGM / Play List
 
 - Import BGM files from the Main or Play List view.
-- If `Run on Import` is enabled in Config, Auto Loop runs for each newly imported BGM.
-- Use `Auto Loop All` in the Play List view to scan all loaded BGM files.
+- If `Run on Import` is enabled in Config, Auto Loop runs for each newly imported BGM. If another scan is already running, the imported tracks wait and scan after the active scan completes.
+- `VGTDEEP` is the default game-OST Auto Loop preset. It uses Deep detection with a 30-second minimum loop and a 60% acceptance line, tuned for practical game soundtrack scanning.
+- MP3, OGG, FLAC, and OPUS imports build waveform previews through the renderer audio decoder when needed.
+- Use `Auto Loop All` to scan all loaded BGM files.
 - Build Play List before playlist playback. Before creation, playlist playback is disabled and prompts to open the Play List build flow.
-- Each playlist item can use loop count or duration, with fade-out before moving to the next item.
+- Each playlist item can use loop count, duration, or straight playback, with fade-out before moving to the next item.
 - Playlist rules can be copied, pasted, moved, and applied across all items.
 
 ## SE Pad

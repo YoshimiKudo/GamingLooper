@@ -5,6 +5,7 @@ export interface LoopCandidate {
   end: number;
   confidence: number;
   source: "metadata" | "detected";
+  acceptanceThreshold?: number;
 }
 
 export interface DetectionYieldScheduler {
@@ -90,7 +91,9 @@ export function findBestLoopDeep(
     .map((candidate) => applyZeroCrossingCorrection(mono, candidate, windowSamples))
     .map((candidate) => rescoreDeepCandidate(mono, candidate, windowSamples, sampleRate))
     .sort((a, b) => b.confidence - a.confidence);
-  const deepCandidate = refined[0] ?? null;
+  const deepCandidate = refined[0]
+    ? refineDeepBoundaryShift(mono, refined[0], windowSamples, sampleRate, settings.matchThreshold)
+    : null;
 
   if (!deepCandidate) {
     return normalCandidate;
@@ -99,6 +102,42 @@ export function findBestLoopDeep(
     return deepCandidate;
   }
   return deepCandidate.confidence >= normalCandidate.confidence - 1 ? deepCandidate : normalCandidate;
+}
+
+export function findBestLoopVgost(
+  mono: Float32Array,
+  sampleRate: number,
+  settings: DetectionSettings,
+  metadataLoop: LoopMarker | null
+): LoopCandidate | null {
+  const candidates: LoopCandidate[] = [];
+  for (const pass of buildVgostFastPasses(settings)) {
+    addVgostCandidate(candidates, findBestLoop(mono, sampleRate, pass.settings, metadataLoop), pass);
+    const best = selectBestVgostCandidate(candidates);
+    if (isConfidentVgostCandidate(best)) {
+      return best;
+    }
+  }
+  let best = selectBestVgostCandidate(candidates);
+  if (isAcceptedVgostCandidate(best)) {
+    return best;
+  }
+
+  const deepPass = buildVgostDeepFallbackPass(settings);
+  addVgostCandidate(candidates, findBestLoopDeep(mono, sampleRate, deepPass.settings, metadataLoop), deepPass);
+  best = selectBestVgostCandidate(candidates);
+  if (isAcceptedVgostCandidate(best)) {
+    return best;
+  }
+
+  for (const pass of buildVgostLongFallbackPasses(settings)) {
+    addVgostCandidate(candidates, findBestLoop(mono, sampleRate, pass.settings, metadataLoop), pass, mono.length, sampleRate);
+    best = selectBestVgostCandidate(candidates);
+    if (isAcceptedVgostCandidate(best)) {
+      return best;
+    }
+  }
+  return best;
 }
 
 export async function findBestLoopResponsive(
@@ -193,7 +232,9 @@ export async function findBestLoopDeepResponsive(
     await maybeYield(scheduler);
   }
   refined.sort((a, b) => b.confidence - a.confidence);
-  const deepCandidate = refined[0] ?? null;
+  const deepCandidate = refined[0]
+    ? await refineDeepBoundaryShiftResponsive(mono, refined[0], windowSamples, sampleRate, settings.matchThreshold, scheduler)
+    : null;
 
   if (!deepCandidate) {
     return normalCandidate;
@@ -202,6 +243,46 @@ export async function findBestLoopDeepResponsive(
     return deepCandidate;
   }
   return deepCandidate.confidence >= normalCandidate.confidence - 1 ? deepCandidate : normalCandidate;
+}
+
+export async function findBestLoopVgostResponsive(
+  mono: Float32Array,
+  sampleRate: number,
+  settings: DetectionSettings,
+  metadataLoop: LoopMarker | null,
+  scheduler: DetectionYieldScheduler
+): Promise<LoopCandidate | null> {
+  const candidates: LoopCandidate[] = [];
+  for (const pass of buildVgostFastPasses(settings)) {
+    addVgostCandidate(candidates, await findBestLoopResponsive(mono, sampleRate, pass.settings, metadataLoop, scheduler), pass);
+    await maybeYield(scheduler);
+    const best = selectBestVgostCandidate(candidates);
+    if (isConfidentVgostCandidate(best)) {
+      return best;
+    }
+  }
+  let best = selectBestVgostCandidate(candidates);
+  if (isAcceptedVgostCandidate(best)) {
+    return best;
+  }
+
+  const deepPass = buildVgostDeepFallbackPass(settings);
+  addVgostCandidate(candidates, await findBestLoopDeepResponsive(mono, sampleRate, deepPass.settings, metadataLoop, scheduler), deepPass);
+  await maybeYield(scheduler);
+  best = selectBestVgostCandidate(candidates);
+  if (isAcceptedVgostCandidate(best)) {
+    return best;
+  }
+
+  for (const pass of buildVgostLongFallbackPasses(settings)) {
+    addVgostCandidate(candidates, await findBestLoopResponsive(mono, sampleRate, pass.settings, metadataLoop, scheduler), pass, mono.length, sampleRate);
+    await maybeYield(scheduler);
+    best = selectBestVgostCandidate(candidates);
+    if (isAcceptedVgostCandidate(best)) {
+      return best;
+    }
+  }
+  return best;
 }
 
 export function measureMatch(mono: Float32Array, aStart: number, bStart: number, length: number, stride = 1): number {
@@ -587,6 +668,140 @@ function rescoreDeepCandidate(mono: Float32Array, candidate: LoopCandidate, wind
   };
 }
 
+function refineDeepBoundaryShift(
+  mono: Float32Array,
+  candidate: LoopCandidate,
+  windowSamples: number,
+  sampleRate: number,
+  acceptanceThreshold: number
+): LoopCandidate {
+  const originalScore = scoreLoopBoundarySymmetry(mono, candidate.start, candidate.end, sampleRate);
+  if (!originalScore || originalScore.score >= 98) {
+    return candidate;
+  }
+
+  const loopLength = candidate.end - candidate.start;
+  let best = { shift: 0, score: originalScore };
+  const coarseRadius = Math.round(sampleRate * 2);
+  const coarseStep = Math.max(120, Math.round(sampleRate / 100));
+  for (let shift = -coarseRadius; shift <= coarseRadius; shift += coarseStep) {
+    const start = candidate.start + shift;
+    const end = start + loopLength;
+    const score = scoreLoopBoundarySymmetry(mono, start, end, sampleRate);
+    if (score && score.score > best.score.score) {
+      best = { shift, score };
+    }
+  }
+
+  const fineRadius = Math.round(sampleRate / 50);
+  const fineStep = Math.max(8, Math.round(sampleRate / 2000));
+  const coarseBestShift = best.shift;
+  for (let shift = coarseBestShift - fineRadius; shift <= coarseBestShift + fineRadius; shift += fineStep) {
+    const start = candidate.start + shift;
+    const end = start + loopLength;
+    const score = scoreLoopBoundarySymmetry(mono, start, end, sampleRate);
+    if (score && score.score > best.score.score) {
+      best = { shift, score };
+    }
+  }
+
+  if (best.shift === 0 || best.score.score < originalScore.score + 0.75) {
+    return candidate;
+  }
+
+  const shifted = rescoreDeepCandidate(
+    mono,
+    { ...candidate, start: candidate.start + best.shift, end: candidate.end + best.shift },
+    windowSamples,
+    sampleRate
+  );
+  if (shifted.confidence < acceptanceThreshold || shifted.confidence < candidate.confidence - 12) {
+    return candidate;
+  }
+  return shifted;
+}
+
+async function refineDeepBoundaryShiftResponsive(
+  mono: Float32Array,
+  candidate: LoopCandidate,
+  windowSamples: number,
+  sampleRate: number,
+  acceptanceThreshold: number,
+  scheduler: DetectionYieldScheduler
+): Promise<LoopCandidate> {
+  const originalScore = scoreLoopBoundarySymmetry(mono, candidate.start, candidate.end, sampleRate);
+  if (!originalScore || originalScore.score >= 98) {
+    return candidate;
+  }
+
+  const loopLength = candidate.end - candidate.start;
+  let best = { shift: 0, score: originalScore };
+  const coarseRadius = Math.round(sampleRate * 2);
+  const coarseStep = Math.max(120, Math.round(sampleRate / 100));
+  for (let shift = -coarseRadius; shift <= coarseRadius; shift += coarseStep) {
+    const start = candidate.start + shift;
+    const end = start + loopLength;
+    const score = scoreLoopBoundarySymmetry(mono, start, end, sampleRate);
+    if (score && score.score > best.score.score) {
+      best = { shift, score };
+    }
+    await maybeYield(scheduler);
+  }
+
+  const fineRadius = Math.round(sampleRate / 50);
+  const fineStep = Math.max(8, Math.round(sampleRate / 2000));
+  const coarseBestShift = best.shift;
+  for (let shift = coarseBestShift - fineRadius; shift <= coarseBestShift + fineRadius; shift += fineStep) {
+    const start = candidate.start + shift;
+    const end = start + loopLength;
+    const score = scoreLoopBoundarySymmetry(mono, start, end, sampleRate);
+    if (score && score.score > best.score.score) {
+      best = { shift, score };
+    }
+    await maybeYield(scheduler);
+  }
+
+  if (best.shift === 0 || best.score.score < originalScore.score + 0.75) {
+    return candidate;
+  }
+
+  const shifted = rescoreDeepCandidate(
+    mono,
+    { ...candidate, start: candidate.start + best.shift, end: candidate.end + best.shift },
+    windowSamples,
+    sampleRate
+  );
+  if (shifted.confidence < acceptanceThreshold || shifted.confidence < candidate.confidence - 12) {
+    return candidate;
+  }
+  return shifted;
+}
+
+function scoreLoopBoundarySymmetry(
+  mono: Float32Array,
+  start: number,
+  end: number,
+  sampleRate: number
+): { score: number } | null {
+  const sideSamples = Math.round(sampleRate * 1.5);
+  const shortSamples = Math.round(sampleRate * 0.35);
+  if (start - sideSamples < 0 || end - sideSamples < 0 || start + sideSamples >= mono.length || end + sideSamples >= mono.length) {
+    return null;
+  }
+
+  const forward = measureMatch(mono, start, end, sideSamples, 4);
+  const backward = measureMatch(mono, start - sideSamples, end - sideSamples, sideSamples, 4);
+  const surround = measureMatch(mono, start - sideSamples, end - sideSamples, sideSamples * 2, 4);
+  const shortForward = measureMatch(mono, start, end, shortSamples, 2);
+  const shortBackward = measureMatch(mono, start - shortSamples, end - shortSamples, shortSamples, 2);
+  const loudnessA = estimateLoudnessDb(mono, start - sideSamples, sideSamples * 2);
+  const loudnessB = estimateLoudnessDb(mono, end - sideSamples, sideSamples * 2);
+  const loudnessPenalty = Math.min(8, Math.abs(loudnessA - loudnessB) * 1.2);
+  return {
+    score: surround * 0.52 + forward * 0.18 + backward * 0.18 + shortForward * 0.06 + shortBackward * 0.06 - loudnessPenalty
+  };
+}
+
 function dot(a: Float32Array, b: Float32Array): number {
   let value = 0;
   for (let i = 0; i < a.length; i += 1) {
@@ -604,6 +819,145 @@ function insertBest(best: LoopCandidate[], candidate: LoopCandidate, limit: numb
   if (best.length > limit) {
     best.length = limit;
   }
+}
+
+interface VgostDetectionPass {
+  settings: DetectionSettings;
+  requireSoundtrackStructure: boolean;
+}
+
+function buildVgostFastPasses(settings: DetectionSettings): VgostDetectionPass[] {
+  const minimumLoopMs = Math.max(30000, settings.minimumLoopMs);
+  return [
+    {
+      settings: {
+        ...settings,
+        matchWindowMs: 8000,
+        matchThreshold: Math.max(85, settings.matchThreshold),
+        minimumLoopMs
+      },
+      requireSoundtrackStructure: false
+    },
+    {
+      settings: {
+        ...settings,
+        matchWindowMs: 10000,
+        matchThreshold: settings.matchThreshold,
+        minimumLoopMs
+      },
+      requireSoundtrackStructure: false
+    }
+  ];
+}
+
+function buildVgostDeepFallbackPass(settings: DetectionSettings): VgostDetectionPass {
+  return {
+    settings: {
+      ...settings,
+      mode: "deep",
+      matchWindowMs: 8000,
+      matchThreshold: settings.matchThreshold,
+      minimumLoopMs: Math.max(30000, settings.minimumLoopMs)
+    },
+    requireSoundtrackStructure: false
+  };
+}
+
+function buildVgostLongFallbackPasses(settings: DetectionSettings): VgostDetectionPass[] {
+  const minimumLoopMs = Math.max(30000, settings.minimumLoopMs);
+  return [
+    {
+      settings: {
+        ...settings,
+        matchWindowMs: 20000,
+        matchThreshold: 70,
+        minimumLoopMs
+      },
+      requireSoundtrackStructure: true
+    },
+    {
+      settings: {
+        ...settings,
+        matchWindowMs: 30000,
+        matchThreshold: 70,
+        minimumLoopMs
+      },
+      requireSoundtrackStructure: true
+    }
+  ];
+}
+
+function addVgostCandidate(
+  candidates: LoopCandidate[],
+  candidate: LoopCandidate | null,
+  pass: VgostDetectionPass,
+  totalSamples?: number,
+  sampleRate?: number
+): void {
+  if (!candidate) {
+    return;
+  }
+  if (pass.requireSoundtrackStructure && totalSamples && sampleRate && !matchesSoundtrackLoopStructure(candidate, totalSamples, sampleRate)) {
+    return;
+  }
+  candidates.push({ ...candidate, acceptanceThreshold: pass.settings.matchThreshold });
+}
+
+function selectBestVgostCandidate(candidates: LoopCandidate[]): LoopCandidate | null {
+  if (candidates.length === 0) {
+    return null;
+  }
+  const accepted = candidates.filter((candidate) => candidate.confidence >= getAcceptanceThreshold(candidate));
+  const pool = accepted.length > 0 ? accepted : candidates;
+  pool.sort(compareVgostCandidates);
+  return pool[0] ?? null;
+}
+
+function isAcceptedVgostCandidate(candidate: LoopCandidate | null): boolean {
+  return Boolean(candidate && candidate.confidence >= getAcceptanceThreshold(candidate));
+}
+
+function isConfidentVgostCandidate(candidate: LoopCandidate | null): boolean {
+  return Boolean(candidate && getAcceptanceMargin(candidate) >= 7);
+}
+
+function compareVgostCandidates(a: LoopCandidate, b: LoopCandidate): number {
+  const marginDiff = getAcceptanceMargin(b) - getAcceptanceMargin(a);
+  if (Math.abs(marginDiff) > 0.01) {
+    return marginDiff;
+  }
+  const confidenceDiff = b.confidence - a.confidence;
+  if (Math.abs(confidenceDiff) > 0.01) {
+    return confidenceDiff;
+  }
+  return a.start - b.start;
+}
+
+function getAcceptanceMargin(candidate: LoopCandidate): number {
+  return candidate.confidence - getAcceptanceThreshold(candidate);
+}
+
+function getAcceptanceThreshold(candidate: LoopCandidate): number {
+  return candidate.acceptanceThreshold ?? 0;
+}
+
+function matchesSoundtrackLoopStructure(candidate: LoopCandidate, totalSamples: number, sampleRate: number): boolean {
+  const durationSec = totalSamples / sampleRate;
+  const startSec = candidate.start / sampleRate;
+  const endSec = candidate.end / sampleRate;
+  const lengthSec = (candidate.end - candidate.start) / sampleRate;
+  const tailSec = durationSec - endSec;
+  const lengthRatio = lengthSec / Math.max(durationSec, 1);
+  if (durationSec < 90 || durationSec > 480) {
+    return false;
+  }
+  if (lengthSec < 45 || lengthRatio < 0.28 || lengthRatio > 0.62) {
+    return false;
+  }
+  if (startSec < 0 || startSec > durationSec * 0.58) {
+    return false;
+  }
+  return tailSec >= 5 && tailSec <= durationSec * 0.58;
 }
 
 function clamp(value: number, min: number, max: number): number {

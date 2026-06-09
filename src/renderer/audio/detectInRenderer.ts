@@ -1,6 +1,8 @@
 import type { BgmTrack, DetectionResult, DetectionSettings, LoopMarker } from "../../shared/types.js";
-import { findBestLoopDeepResponsive, findBestLoopResponsive } from "../../shared/detectCore.js";
+import { findBestLoopDeepResponsive, findBestLoopResponsive, findBestLoopVgostResponsive } from "../../shared/detectCore.js";
 import type { LoopCandidate } from "../../shared/detectCore.js";
+import { isLegacyVgostDetectionSettings } from "../../shared/project.js";
+import { buildWaveformPeaksFromAudioBuffer } from "./waveform.js";
 
 export async function detectTrackWithWebAudio(track: BgmTrack, settings: DetectionSettings): Promise<DetectionResult> {
   let context: AudioContext | null = null;
@@ -9,6 +11,7 @@ export async function detectTrackWithWebAudio(track: BgmTrack, settings: Detecti
     context = new AudioContextClass();
     const arrayBuffer = await window.gamingLooper.readAudioFile(track.filePath);
     const audioBuffer = await context.decodeAudioData(arrayBuffer.slice(0));
+    const waveform = buildWaveformPeaksFromAudioBuffer(audioBuffer);
     const mono = downmixAudioBuffer(audioBuffer);
     const workerMono = new Float32Array(mono);
     const candidate = await findBestLoopInWorker(workerMono, audioBuffer.sampleRate, settings, track.loop).catch(() =>
@@ -22,7 +25,12 @@ export async function detectTrackWithWebAudio(track: BgmTrack, settings: Detecti
         id: track.id,
         loop: null,
         status: "no-loop",
-        validation: `No ${settings.mode === "deep" ? "Deep " : ""}loop candidate reached ${settings.matchThreshold}%.`
+        validation: `No ${settings.mode === "deep" ? "Deep " : ""}loop candidate reached ${settings.matchThreshold}%.`,
+        waveform,
+        sampleRate: audioBuffer.sampleRate,
+        channels: audioBuffer.numberOfChannels,
+        durationSamples: audioBuffer.length,
+        durationMs: (audioBuffer.length / audioBuffer.sampleRate) * 1000
       };
     }
 
@@ -33,11 +41,20 @@ export async function detectTrackWithWebAudio(track: BgmTrack, settings: Detecti
       confidence: candidate.confidence,
       source: candidate.source
     };
+    const acceptanceThreshold = candidate.acceptanceThreshold ?? settings.matchThreshold;
+    const accepted = candidate.confidence >= acceptanceThreshold;
     return {
       id: track.id,
-      loop,
-      status: candidate.confidence >= settings.matchThreshold ? "detected" : "low-confidence",
-      validation: `Detected${settings.mode === "deep" ? " with Deep" : ""} at ${candidate.confidence.toFixed(1)}%.`
+      loop: accepted ? loop : null,
+      status: accepted ? "detected" : "low-confidence",
+      validation: accepted
+        ? `Detected${settings.mode === "deep" ? " with Deep" : ""} at ${candidate.confidence.toFixed(1)}%.`
+        : `Best ${settings.mode === "deep" ? "Deep " : ""}candidate was ${candidate.confidence.toFixed(1)}%, below the ${acceptanceThreshold}% threshold.`,
+      waveform,
+      sampleRate: audioBuffer.sampleRate,
+      channels: audioBuffer.numberOfChannels,
+      durationSamples: audioBuffer.length,
+      durationMs: (audioBuffer.length / audioBuffer.sampleRate) * 1000
     };
   } catch (error) {
     await closeAudioContext(context);
@@ -74,9 +91,11 @@ async function findBestLoopResponsiveFallback(
   metadataLoop: LoopMarker | null
 ): Promise<LoopCandidate | null> {
   const scheduler = createRendererDetectionScheduler();
-  return settings.mode === "deep"
-    ? findBestLoopDeepResponsive(mono, sampleRate, settings, metadataLoop, scheduler)
-    : findBestLoopResponsive(mono, sampleRate, settings, metadataLoop, scheduler);
+  return isLegacyVgostDetectionSettings(settings)
+    ? findBestLoopVgostResponsive(mono, sampleRate, settings, metadataLoop, scheduler)
+    : settings.mode === "deep"
+      ? findBestLoopDeepResponsive(mono, sampleRate, settings, metadataLoop, scheduler)
+      : findBestLoopResponsive(mono, sampleRate, settings, metadataLoop, scheduler);
 }
 
 function findBestLoopInWorker(

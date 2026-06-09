@@ -30,9 +30,9 @@ describe("README first touch guidance", () => {
     expect(readme).toContain("SE Pad key  --->  Load SE file  --->  Tune Vol / Pan / Icon  --->  Save SE Set");
     expect(readme).toContain("BGM Source  --->  Build Sequencer  --->  Complete & Save Sequence");
     expect(readme).toContain("An SE Set is the saved key layout");
-    expect(readme).toContain("Build a List that plays game soundtrack files with the loop count or play duration you choose.");
-    expect(readme).toContain("Use `Time` when you want to check a track briefly, or `Loop` when you want to hear it repeat.");
-    expect(readme).toContain("Main View can load the saved Sequence and play it back with the order, `Loop`, `Time`, and `Fade` you set.");
+    expect(readme).toContain("Build a List that plays game soundtrack files with the loop count, play duration, or straight source playback you choose.");
+    expect(readme).toContain("Use `Loop` when you want to hear loop markers repeat, `Time` when you want to play for a chosen number of seconds, or `Straight` when you want to ignore loop markers and play the source from start to end once.");
+    expect(readme).toContain("Main View can load the saved Sequence and play it back with the order, `Loop`, `Time`, `Straight`, and `Fade` you set.");
   });
 
   it("shows a graphical sequence quick start in the in-app README modal", () => {

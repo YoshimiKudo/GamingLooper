@@ -84,6 +84,11 @@ export interface DetectionResult {
   loop: LoopMarker | null;
   status: TrackStatus;
   validation: string;
+  waveform?: WaveformPeaks | null;
+  sampleRate?: number;
+  channels?: number;
+  durationSamples?: number;
+  durationMs?: number;
 }
 
 export interface ImportResult {

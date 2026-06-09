@@ -1,6 +1,7 @@
-import { findBestLoop, findBestLoopDeep } from "../../shared/detectCore.js";
+import { findBestLoop, findBestLoopDeep, findBestLoopVgost } from "../../shared/detectCore.js";
 import type { LoopCandidate } from "../../shared/detectCore.js";
 import type { DetectionSettings, LoopMarker } from "../../shared/types.js";
+import { isLegacyVgostDetectionSettings } from "../../shared/project.js";
 
 interface DetectionWorkerRequest {
   requestId: string;
@@ -26,8 +27,9 @@ workerScope.onmessage = (event: MessageEvent<DetectionWorkerRequest>) => {
   const { requestId, monoBuffer, sampleRate, settings, metadataLoop } = event.data;
   try {
     const mono = new Float32Array(monoBuffer);
-    const candidate =
-      settings.mode === "deep"
+    const candidate = isLegacyVgostDetectionSettings(settings)
+      ? findBestLoopVgost(mono, sampleRate, settings, metadataLoop)
+      : settings.mode === "deep"
         ? findBestLoopDeep(mono, sampleRate, settings, metadataLoop)
         : findBestLoop(mono, sampleRate, settings, metadataLoop);
     workerScope.postMessage({ requestId, ok: true, candidate } satisfies DetectionWorkerResponse);
