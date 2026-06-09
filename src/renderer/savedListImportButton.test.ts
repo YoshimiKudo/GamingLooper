@@ -15,12 +15,22 @@ describe("saved list action buttons", () => {
   });
 
   it("keeps the Sequence import button inside the saved-list column at narrow widths", () => {
+    const savedListZoneStyle = styleSource.slice(styleSource.indexOf(".saved-list-zone {"), styleSource.indexOf(".saved-list-zone.list-not-loaded"));
     const savedListActionsStyle = styleSource.slice(styleSource.indexOf(".saved-list-actions {"), styleSource.indexOf(".load-list-button {"));
     const loadListButtonStyle = styleSource.slice(styleSource.indexOf(".load-list-button {"), styleSource.indexOf(".load-list-button:hover"));
 
+    expect(savedListZoneStyle).toContain("container-type: inline-size;");
+    expect(savedListZoneStyle).toContain("max-width: 100%;");
+    expect(savedListZoneStyle).toContain("overflow: hidden;");
+    expect(savedListActionsStyle).toContain("box-sizing: border-box;");
+    expect(savedListActionsStyle).toContain("justify-self: stretch;");
+    expect(savedListActionsStyle).toContain("width: 100cqw;");
+    expect(savedListActionsStyle).toContain("max-width: 100%;");
     expect(savedListActionsStyle).toContain("min-width: 0;");
     expect(savedListActionsStyle).toContain("overflow: hidden;");
+    expect(savedListActionsStyle).toContain("padding: 10px 8px 0;");
     expect(loadListButtonStyle).toContain("box-sizing: border-box;");
+    expect(loadListButtonStyle).toContain("justify-self: stretch;");
     expect(loadListButtonStyle).toContain("max-width: 100%;");
     expect(loadListButtonStyle).toContain("min-width: 0;");
     expect(loadListButtonStyle).toContain("text-overflow: ellipsis;");

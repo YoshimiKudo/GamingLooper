@@ -3893,8 +3893,11 @@ canvas {
 .saved-list-zone {
   grid-column: 1;
   grid-row: 1 / span 2;
+  container-type: inline-size;
   grid-template-rows: auto minmax(0, 1fr) auto;
   border-color: rgba(206, 144, 88, 0.34);
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .saved-list-zone.list-not-loaded {
@@ -4298,17 +4301,22 @@ canvas {
 }
 
 .saved-list-actions {
+  box-sizing: border-box;
   display: grid;
   justify-items: stretch;
+  justify-self: stretch;
+  width: 100cqw;
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
-  padding-top: 10px;
+  padding: 10px 8px 0;
   border-top: 1px solid rgba(207, 164, 124, 0.12);
 }
 
 .load-list-button {
   box-sizing: border-box;
-  width: 100%;
+  justify-self: stretch;
+  width: auto;
   max-width: 100%;
   min-width: 0;
   height: 34px;
