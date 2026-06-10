@@ -1,5 +1,30 @@
 # GamingLooper
 
+日本語 | [English](#english)
+
+## 日本語
+
+GamingLooper は、ゲームサントラ向けのループ検出、Sequence再生、SE Pad確認を行う Windows向け beta ツールです。
+
+- 最新版: [GamingLooper v0.1.0 beta 1](https://github.com/YoshimiKudo/GamingLooper/releases/tag/v0.1.0-beta.1)
+- Windows x64 ダウンロード: [GamingLooper-0.1.0-beta.1-win-x64.zip](https://github.com/YoshimiKudo/GamingLooper/releases/download/v0.1.0-beta.1/GamingLooper-0.1.0-beta.1-win-x64.zip)
+- リリース一覧: [GitHub Releases](https://github.com/YoshimiKudo/GamingLooper/releases)
+
+このビルドは未署名の Windows beta 版です。初回起動時に SmartScreen やセキュリティ警告が表示される場合があります。
+
+主な用途:
+
+- ゲームOSTのループポイントを検出し、Loop / Time / Straight の再生条件でSequenceを組む
+- 複数曲をプレイリスト化して、ループ回数やフェードを含めた流れを確認する
+- SE Padに効果音を割り当て、BGMとSEが同時に鳴ったときのバランスを確認する
+- SE Setとしてキー割り当てを保存し、あとから読み込む
+
+音声ファイル本体は自動でコピー・移動されません。GamingLooper はローカルのProjectデータに、ループ情報、Sequence、SE割り当て、Mix、Configなどを保存します。
+
+配布ZIPを展開したら、`GamingLooper` フォルダ全体をまとめて保持してください。初期保存先は `GamingLooper/save` です。
+
+## English
+
 GamingLooper is a desktop game-audio loop, playlist, and SE audition tool based on AutoLooper's loop-detection approach.
 
 ## LATEST PUBLIC BETA

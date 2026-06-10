@@ -8,6 +8,14 @@ const preloadSource = readFileSync(new URL("../preload/index.ts", import.meta.ur
 const mainSource = readFileSync(new URL("../main/main.ts", import.meta.url), "utf8");
 
 describe("README first touch guidance", () => {
+  it("shows Japanese release guidance before the English README", () => {
+    expect(readme).toContain("## 日本語");
+    expect(readme).toContain("GamingLooper は、ゲームサントラ向けのループ検出、Sequence再生、SE Pad確認を行う Windows向け beta ツールです。");
+    expect(readme).toContain("Windows x64 ダウンロード");
+    expect(readme).toContain("## English");
+    expect(readme.indexOf("## 日本語")).toBeLessThan(readme.indexOf("## English"));
+  });
+
   it("persists the first README click with a stable local storage key", () => {
     expect(appSource).toContain('README_SEEN_STORAGE_KEY = "gaminglooper:readme-seen:v1"');
     expect(appSource).toContain("markReadmeSeen();");
