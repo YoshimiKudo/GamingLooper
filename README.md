@@ -6,6 +6,8 @@
 
 GamingLooper は、ゲームサントラ向けのループ検出、Sequence再生、SE Pad確認を行う Windows向け beta ツールです。
 
+[![GamingLooper promo video](docs/assets/gaminglooper-promo-thumbnail.png)](https://github.com/YoshimiKudo/GamingLooper/releases/download/v0.1.0-beta.1/GamingLooper_promo_concept_cut_v6.mp4)
+
 - 最新版: [GamingLooper v0.1.0 beta 1](https://github.com/YoshimiKudo/GamingLooper/releases/tag/v0.1.0-beta.1)
 - Windows x64 ダウンロード: [GamingLooper-0.1.0-beta.1-win-x64.zip](https://github.com/YoshimiKudo/GamingLooper/releases/download/v0.1.0-beta.1/GamingLooper-0.1.0-beta.1-win-x64.zip)
 - プロモ動画: [GamingLooper_promo_concept_cut_v6.mp4](https://github.com/YoshimiKudo/GamingLooper/releases/download/v0.1.0-beta.1/GamingLooper_promo_concept_cut_v6.mp4)
