@@ -6,11 +6,12 @@
 
 GamingLooper は、ゲームサントラ向けのループ検出、Sequence再生、SE Pad確認を行う Windows向け beta ツールです。
 
-[![GamingLooper promo video](docs/assets/gaminglooper-promo-thumbnail.png)](https://github.com/YoshimiKudo/GamingLooper/releases/download/v0.1.0-beta.1/GamingLooper_promo_concept_cut_v6.mp4)
+[![GamingLooper promo video](docs/assets/gaminglooper-promo-thumbnail.png)](https://x.com/yoshimikudo/status/2064653549267750999)
 
 - 最新版: [GamingLooper v0.1.0 beta 1](https://github.com/YoshimiKudo/GamingLooper/releases/tag/v0.1.0-beta.1)
 - Windows x64 ダウンロード: [GamingLooper-0.1.0-beta.1-win-x64.zip](https://github.com/YoshimiKudo/GamingLooper/releases/download/v0.1.0-beta.1/GamingLooper-0.1.0-beta.1-win-x64.zip)
-- プロモ動画: [GamingLooper_promo_concept_cut_v6.mp4](https://github.com/YoshimiKudo/GamingLooper/releases/download/v0.1.0-beta.1/GamingLooper_promo_concept_cut_v6.mp4)
+- プロモ動画: [X投稿で見る](https://x.com/yoshimikudo/status/2064653549267750999)
+- 動画が見られない場合: [MP4を開く](https://github.com/YoshimiKudo/GamingLooper/releases/download/v0.1.0-beta.1/GamingLooper_promo_concept_cut_v6.mp4)
 - リリース一覧: [GitHub Releases](https://github.com/YoshimiKudo/GamingLooper/releases)
 
 このビルドは未署名の Windows beta 版です。初回起動時に SmartScreen やセキュリティ警告が表示される場合があります。
@@ -34,7 +35,8 @@ GamingLooper is a desktop game-audio loop, playlist, and SE audition tool based 
 
 - Latest release: [GamingLooper v0.1.0 beta 1](https://github.com/YoshimiKudo/GamingLooper/releases/tag/v0.1.0-beta.1)
 - Windows x64 download: [GamingLooper-0.1.0-beta.1-win-x64.zip](https://github.com/YoshimiKudo/GamingLooper/releases/download/v0.1.0-beta.1/GamingLooper-0.1.0-beta.1-win-x64.zip)
-- Promo video: [GamingLooper_promo_concept_cut_v6.mp4](https://github.com/YoshimiKudo/GamingLooper/releases/download/v0.1.0-beta.1/GamingLooper_promo_concept_cut_v6.mp4)
+- Promo video: [Watch on X](https://x.com/yoshimikudo/status/2064653549267750999)
+- Fallback MP4: [Open MP4](https://github.com/YoshimiKudo/GamingLooper/releases/download/v0.1.0-beta.1/GamingLooper_promo_concept_cut_v6.mp4)
 
 This is an unsigned Windows beta release. Windows may show a SmartScreen or security warning on first launch.
 
